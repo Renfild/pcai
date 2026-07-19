@@ -1,6 +1,8 @@
 # Lighting & Particles Guide
 
-How to use **blend modes** + `fx_helpers.py` so glow/ember/spark layers look correct in previews **and** in Aseprite.
+How to use **blend modes** + `fx_helpers.py` + **`lighting_logic.py`** so glow/ember/spark layers look correct in previews **and** in Aseprite.
+
+For platformer stages prefer `lighting_logic.LightingSetup` / `stamp_lighting` / `platformer_default_lights` — see [platformer-guide.md](platformer-guide.md).
 
 ## Blend modes that matter for FX
 
