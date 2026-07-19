@@ -56,15 +56,26 @@ Tilemap codes: `0` empty · `1` solid · `2` one_way · `3` hazard · `4` climb 
 
 ## Layer stack (platformer)
 
-1. `far` / `sky` — soft gradient + distant silhouette (scroll ~0.2)
-2. `world` — tiles, solids, terrain, water body
-3. `mid` — leaf litter, water surface, mid canopy
-4. `props` — torches, doors, chests, vines
-5. `near` — overhang leaves / FG props (scroll ~1.25)
-6. `shade` — multiply time-of-day / AO
-7. `beams` — screen diffused fill + soft shafts + BG clouds
-8. `glow` — addition lamps / caustics / magic
-9. `leaves` / `clouds_fg` — falling leaves, foreground fog
+Roles from [Sandro Maglione — Platformer Level Design Full Guide](https://www.sandromaglione.com/articles/pixel-art-platformer-level-design-full-guide):
+
+| Layer | Role | Scroll | Visual rules |
+|---|---|---|---|
+| `near` / FG | Foreground | ~1.15 | Grass, overhang rocks — **never hide the player**; margins only |
+| `world` + `props` | **Main** | 1.0 | Solid outline, high contrast, less saturation — **interactive only** |
+| `close_bg` | Close background | 1.0 (no parallax) | No outline, more saturated — castle outer wall, near trees |
+| `far` | Parallax near/far | 0.2–0.55 | Fewer colors, higher saturation, silhouettes farther out |
+| `sky` | Farthest | 0.0 | Gradient / haze |
+
+```python
+from location_gen import platformer_layer_stack, LAYER_ROLES
+platformer_layer_stack()  # recommended Aseprite order
+```
+
+**Main vs background:** player must instantly know what is collidable. Outer walkable tiles get more detail; inner fill is darker, lower contrast, more saturated.
+
+**Close background** moves 1:1 with the camera (extends the room) — do not parallax it.
+
+**Light** can guide the player (cave exit shafts, player-attached fill). Use `lighting_logic` + `atmosphere`.
 
 ## Atmosphere (soft BG, clouds, water, leaves)
 

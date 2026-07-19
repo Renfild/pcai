@@ -10,7 +10,10 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
 from aseprite_io import Sprite
-from anim_helpers import idle_breath, run_cycle, jump_arc, land_squash, anim_tag_plan, pose_for
+from anim_helpers import (
+    idle_breath, run_cycle, jump_arc, land_squash, anim_tag_plan, pose_for,
+    economize_run_frames, frame_duration_ms, run_keyframe_guide,
+)
 from atmosphere import (
     soft_sky_pixels, cloud_pixels, water_volume_pixels,
     leaf_cluster_pixels, falling_leaves_frame, diffused_fill_pixels,
@@ -21,23 +24,51 @@ from lighting_logic import (
 )
 from location_gen import (
     make_platformer_room, build_platformer_stage, ensure_game_ready, validate_layout,
+    platformer_layer_stack,
+)
+from topdown_anim import (
+    TopDownProfile, topdown_run, topdown_idle, authoring_directions,
+    resolve_orientation, topdown_sheet_plan, facing_from_velocity, sync_check_bobs,
 )
 
 
 def test_anim() -> None:
-    idle = idle_breath(0, frames=6)
-    assert "body_y" in idle
-    run = [run_cycle(i, frames=8) for i in range(8)]
+    idle = idle_breath(0, frames=6, hold_extremes=True)
+    assert "body_y" in idle and "durations_ms" in idle
+    run = [run_cycle(i, frames=6, variable_bob=True) for i in range(6)]
     assert max(r["body_y"] for r in run) > min(r["body_y"] for r in run)
-    passing = [r["body_y"] for r in run if r["phase"] == "passing"]
-    assert max(passing) == max(r["body_y"] for r in run)
+    assert run_cycle(0, frames=3)["phase"] in ("stride", "pass")
+    assert frame_duration_ms(4) == 160
+    assert economize_run_frames(8, 6) == [0, 2, 3, 4, 6, 7]
+    assert len(run_keyframe_guide(6)) == 6
     j = jump_arc(2, frames=6, height=8)
     assert j["body_y"] > 0
     land_squash(0, frames=3)
     plan = anim_tag_plan(["idle", "run", "jump"])
-    assert plan[0]["from"] == 0 and plan[-1]["to"] >= 2
-    assert pose_for("run", 3)["phase"] in ("contact", "down", "passing", "up")
+    assert plan[0]["from"] == 0 and plan[1]["frames"] == 6
+    assert pose_for("run", 3, frames=6)["phase"] in (
+        "contact", "down", "passing", "up", "stride", "pass",
+    )
     print("OK anim_helpers")
+
+
+def test_topdown() -> None:
+    assert authoring_directions(8) == ["N", "NE", "E", "SE", "S"]
+    src, flip = resolve_orientation("NW")
+    assert src == "NE" and flip is True
+    assert facing_from_velocity(1, 0, 8) == "E"
+    pose = topdown_run(2, frames=6, direction="SE")
+    assert pose["flip_x"] is False and pose["source_direction"] == "SE"
+    idle = topdown_idle(1, direction="W")
+    assert idle["flip_x"] is True
+    sheet = topdown_sheet_plan(TopDownProfile())
+    assert sheet["profile"]["footprint"] == [2, 2]
+    bobs = {
+        "S": [topdown_run(i, direction="S") for i in range(6)],
+        "E": [topdown_run(i, direction="E") for i in range(6)],
+    }
+    assert sync_check_bobs(bobs) == []
+    print("OK topdown_anim", sheet["authoring_directions"])
 
 
 def test_lighting() -> None:
@@ -62,8 +93,13 @@ def test_location() -> None:
     game = loc.export_game()
     assert "tilemap" in game and "spawn" in game and "validation" in game
     assert game["tilemap"]["cols"] == loc.width // loc.tile
+    stack = platformer_layer_stack()
+    assert any(l["name"] == "close_bg" for l in stack)
+    assert any(l["name"] == "world" and l.get("outline") for l in stack)
     s, loc2 = build_platformer_stage(Sprite, loc)
     assert s.width == loc.width
+    names = [L.name for L in s.layers]
+    assert "close_bg" in names and "world" in names
     img = s.composite_frame(0)
     assert img.size == (loc.width, loc.height)
     setup = platformer_default_lights(loc.width, loc.height, loc.ground_y, "night", loc.windows, loc.lamps)
@@ -96,7 +132,6 @@ def test_atmosphere() -> None:
 def test_game_ready_gaps() -> None:
     loc = make_platformer_room(theme="forest", style="linear", seed=2, platforms=6, game_ready=True)
     v = validate_layout(loc)
-    # linear generator respects jump budget — should have few/no hard gaps
     assert "hard_gaps" in v
     assert loc.physics is not None
     ensure_game_ready(loc)
@@ -105,6 +140,7 @@ def test_game_ready_gaps() -> None:
 
 def main() -> None:
     test_anim()
+    test_topdown()
     test_lighting()
     test_location()
     test_atmosphere()

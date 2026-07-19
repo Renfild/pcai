@@ -14,6 +14,37 @@ from typing import Dict, List, Optional, Sequence, Tuple
 Color = Tuple[int, int, int, int]
 
 
+# Layer roles (Sandro Maglione — Platformer Level Design Full Guide)
+# Foreground: depth props that never hide the player (margins / pass-behind grass)
+# Main: collidable + interactive — solid outline, high contrast, less saturation
+# Close background: non-interactive, no outline, moves 1:1 with camera (not parallax)
+# Parallax: far layers — more saturation, fewer colors, slower scroll
+LAYER_ROLES = {
+    "foreground": {"scroll": 1.15, "outline": False, "interactive": False, "z": 5},
+    "main":       {"scroll": 1.0,  "outline": True,  "interactive": True,  "z": 3},
+    "close_bg":   {"scroll": 1.0,  "outline": False, "interactive": False, "z": 2},
+    "parallax_near": {"scroll": 0.55, "outline": False, "interactive": False, "z": 1},
+    "parallax_far":  {"scroll": 0.2,  "outline": False, "interactive": False, "z": 0},
+    "sky":           {"scroll": 0.0,  "outline": False, "interactive": False, "z": -1},
+}
+
+
+def platformer_layer_stack() -> List[Dict]:
+    """Recommended Aseprite layer order (bottom → top) for a game-ready stage."""
+    return [
+        {"name": "sky", "role": "sky", **LAYER_ROLES["sky"]},
+        {"name": "far", "role": "parallax_far", **LAYER_ROLES["parallax_far"]},
+        {"name": "close_bg", "role": "close_bg", **LAYER_ROLES["close_bg"]},
+        {"name": "world", "role": "main", **LAYER_ROLES["main"]},
+        {"name": "props", "role": "main", **LAYER_ROLES["main"]},
+        {"name": "near", "role": "foreground", **LAYER_ROLES["foreground"]},
+        {"name": "shade", "role": "fx", "blend": "multiply"},
+        {"name": "beams", "role": "fx", "blend": "screen"},
+        {"name": "glow", "role": "fx", "blend": "addition"},
+        {"name": "fg_fx", "role": "foreground", **LAYER_ROLES["foreground"]},
+    ]
+
+
 @dataclass
 class Rect:
     x: int
@@ -355,11 +386,11 @@ def ensure_game_ready(loc: LocationSpec, phys: Optional[PlatformerPhysics] = Non
         loc.player_spawn = best  # type: ignore
     if not loc.parallax:
         loc.parallax = [
-            {"name": "sky", "scroll": 0.0, "z": 0},
-            {"name": "far", "scroll": 0.2, "z": 1},
-            {"name": "mid", "scroll": 0.55, "z": 2},
-            {"name": "world", "scroll": 1.0, "z": 3},
-            {"name": "near", "scroll": 1.25, "z": 4},
+            {"name": "sky", "role": "sky", "scroll": 0.0, "z": -1},
+            {"name": "far", "role": "parallax_far", "scroll": 0.2, "z": 0},
+            {"name": "close_bg", "role": "close_bg", "scroll": 1.0, "z": 2},
+            {"name": "world", "role": "main", "scroll": 1.0, "z": 3},
+            {"name": "near", "role": "foreground", "scroll": 1.15, "z": 5},
         ]
     return loc
 
@@ -394,11 +425,11 @@ def make_platformer_room(
     loc.solids.append(Rect(width - tile, 0, tile, height))  # right wall
 
     loc.parallax = [
-        {"name": "sky", "scroll": 0.0, "z": 0},
-        {"name": "far", "scroll": 0.2, "z": 1},
-        {"name": "mid", "scroll": 0.55, "z": 2},
-        {"name": "world", "scroll": 1.0, "z": 3},
-        {"name": "near", "scroll": 1.25, "z": 4},
+        {"name": "sky", "role": "sky", "scroll": 0.0, "z": -1},
+        {"name": "far", "role": "parallax_far", "scroll": 0.2, "z": 0},
+        {"name": "close_bg", "role": "close_bg", "scroll": 1.0, "z": 2},
+        {"name": "world", "role": "main", "scroll": 1.0, "z": 3},
+        {"name": "near", "role": "foreground", "scroll": 1.15, "z": 5},
     ]
 
     if style == "linear":
@@ -575,17 +606,28 @@ def draw_location_base(sprite, loc: LocationSpec, layer: str = "world") -> None:
                     sprite.put_pixel(wx + dx, wy + dy, (60, 90, 130, 255), layer=layer, frame=0)
         sprite.put_pixel(wx, wy, gold[1], layer=layer, frame=0)
 
-    def draw_rect(r: Rect, fill: Color, edge: Color) -> None:
+    def draw_rect(r: Rect, fill: Color, edge: Color, outline: bool = True) -> None:
+        """Main-layer solids get a hard top edge (Maglione: clear collidable read)."""
         for y in range(r.y, r.y + r.h):
             for x in range(r.x, r.x + r.w):
-                sprite.put_pixel(x, y, fill, layer=layer, frame=0)
-        for x in range(r.x, r.x + r.w):
-            sprite.put_pixel(x, r.y, edge, layer=layer, frame=0)
-            if r.h > 2:
-                sprite.put_pixel(x, r.y + 1, stone[2], layer=layer, frame=0)
+                # Inner fill darker / less detailed deeper in the block
+                depth = (y - r.y) / max(1, r.h)
+                c = fill if depth < 0.35 else (
+                    fill[0] - 12, fill[1] - 12, fill[2] - 12, fill[3]
+                )
+                c = (max(0, c[0]), max(0, c[1]), max(0, c[2]), c[3])
+                sprite.put_pixel(x, y, c, layer=layer, frame=0)
+        if outline:
+            for x in range(r.x, r.x + r.w):
+                sprite.put_pixel(x, r.y, edge, layer=layer, frame=0)
+                if r.h > 2:
+                    sprite.put_pixel(x, r.y + 1, stone[2], layer=layer, frame=0)
+            for y in range(r.y, r.y + r.h):
+                sprite.put_pixel(r.x, y, stone[0], layer=layer, frame=0)
+                sprite.put_pixel(r.x2, y, stone[0], layer=layer, frame=0)
 
     for r in loc.solids:
-        draw_rect(r, stone[1], stone[3])
+        draw_rect(r, stone[1], stone[3], outline=True)
         for x in range(r.x, r.x + r.w, loc.tile):
             for y in range(r.y, r.y + r.h):
                 sprite.put_pixel(x, y, stone[0], layer=layer, frame=0)
@@ -594,7 +636,7 @@ def draw_location_base(sprite, loc: LocationSpec, layer: str = "world") -> None:
                     sprite.put_pixel(xx, r.y + loc.tile - 1, stone[0], layer=layer, frame=0)
 
     for r in loc.one_way:
-        draw_rect(r, stone[2], stone[3])
+        draw_rect(r, stone[2], stone[3], outline=True)
         for x in range(r.x, r.x + r.w, 3):
             sprite.put_pixel(x, r.y - 1, stone[3], layer=layer, frame=0)
 
@@ -631,14 +673,16 @@ def build_platformer_stage(
     loc: Optional[LocationSpec] = None,
     **loc_kwargs,
 ):
-    """Convenience: LocationSpec → Sprite with world/props/shade/beams/glow layers."""
+    """Convenience: LocationSpec → Sprite with Maglione-style layer stack."""
     if loc is None:
         loc = make_platformer_room(**loc_kwargs)
     s = sprite_cls(loc.width, loc.height)
+    s.add_layer("sky")
     s.add_layer("far")
+    s.add_layer("close_bg")
     s.add_layer("world")
     s.add_layer("props")
-    s.add_layer("near")
+    s.add_layer("near")  # foreground — never obscure player silhouette
     s.add_layer("shade", blend_mode="multiply", opacity=100)
     s.add_layer("beams", blend_mode="screen")
     s.add_layer("glow", blend_mode="addition")
