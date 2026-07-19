@@ -4,13 +4,16 @@
 
   /* ---------- Loader ---------- */
   const loader = document.getElementById("loader");
-  window.addEventListener("load", () => {
-    requestAnimationFrame(() => {
-      setTimeout(() => loader?.classList.add("is-done"), reducedMotion ? 0 : 550);
+  const dismissLoader = () => loader?.classList.add("is-done");
+  if (document.readyState === "complete") {
+    setTimeout(dismissLoader, reducedMotion ? 0 : 550);
+  } else {
+    window.addEventListener("load", () => {
+      setTimeout(dismissLoader, reducedMotion ? 0 : 550);
     });
-  });
+  }
   /* Safety: never leave the loader stuck */
-  setTimeout(() => loader?.classList.add("is-done"), 2200);
+  setTimeout(dismissLoader, 1800);
 
   /* ---------- Custom cursor ---------- */
   const cursor = document.getElementById("cursor");
