@@ -1,0 +1,635 @@
+{
+  "name": "rustvale_hollow",
+  "theme": "autumn_forest",
+  "width": 320,
+  "height": 176,
+  "tile": 16,
+  "ground_y": 144,
+  "spawn": {
+    "x": 40,
+    "y": 112,
+    "feet": true,
+    "player_w": 12,
+    "player_h": 16
+  },
+  "checkpoints": [
+    {
+      "x": 40,
+      "y": 112
+    },
+    {
+      "x": 168,
+      "y": 64
+    }
+  ],
+  "exits": [
+    {
+      "name": "east",
+      "x": 288,
+      "y": 112,
+      "w": 16,
+      "h": 32,
+      "target": "next_hollow"
+    }
+  ],
+  "camera": {
+    "x": 0,
+    "y": 0,
+    "w": 320,
+    "h": 176
+  },
+  "physics": {
+    "jump_height": 48,
+    "jump_gap": 56,
+    "tile": 16
+  },
+  "parallax": [
+    {
+      "name": "sky",
+      "role": "sky",
+      "scroll": 0.0,
+      "z": -1
+    },
+    {
+      "name": "far",
+      "role": "parallax_far",
+      "scroll": 0.2,
+      "z": 0
+    },
+    {
+      "name": "close_bg",
+      "role": "close_bg",
+      "scroll": 1.0,
+      "z": 2
+    },
+    {
+      "name": "world",
+      "role": "main",
+      "scroll": 1.0,
+      "z": 3
+    },
+    {
+      "name": "near",
+      "role": "foreground",
+      "scroll": 1.15,
+      "z": 5
+    }
+  ],
+  "lamps": [
+    {
+      "x": 40,
+      "y": 102
+    },
+    {
+      "x": 188,
+      "y": 102
+    },
+    {
+      "x": 218,
+      "y": 38
+    },
+    {
+      "x": 280,
+      "y": 124
+    }
+  ],
+  "windows": [
+    {
+      "x": 64,
+      "y": 24
+    },
+    {
+      "x": 150,
+      "y": 20
+    },
+    {
+      "x": 230,
+      "y": 26
+    }
+  ],
+  "props": [
+    {
+      "kind": "ember",
+      "x": 40,
+      "y": 108
+    },
+    {
+      "kind": "ember",
+      "x": 188,
+      "y": 108
+    },
+    {
+      "kind": "ember",
+      "x": 218,
+      "y": 44
+    },
+    {
+      "kind": "ember",
+      "x": 280,
+      "y": 130
+    },
+    {
+      "kind": "chest",
+      "x": 152,
+      "y": 16
+    },
+    {
+      "kind": "door",
+      "x": 288,
+      "y": 112,
+      "exit": "east"
+    },
+    {
+      "kind": "mushroom",
+      "x": 72,
+      "y": 142
+    },
+    {
+      "kind": "mushroom",
+      "x": 248,
+      "y": 142
+    },
+    {
+      "kind": "root",
+      "x": 160,
+      "y": 128
+    },
+    {
+      "kind": "checkpoint",
+      "x": 40,
+      "y": 112
+    }
+  ],
+  "collision": [
+    {
+      "type": "solid",
+      "x": 0,
+      "y": 144,
+      "w": 320,
+      "h": 32
+    },
+    {
+      "type": "solid",
+      "x": 0,
+      "y": 0,
+      "w": 320,
+      "h": 16
+    },
+    {
+      "type": "solid",
+      "x": 0,
+      "y": 0,
+      "w": 16,
+      "h": 176
+    },
+    {
+      "type": "solid",
+      "x": 304,
+      "y": 0,
+      "w": 16,
+      "h": 176
+    },
+    {
+      "type": "solid",
+      "x": 16,
+      "y": 144,
+      "w": 96,
+      "h": 32
+    },
+    {
+      "type": "solid",
+      "x": 176,
+      "y": 144,
+      "w": 128,
+      "h": 32
+    },
+    {
+      "type": "solid",
+      "x": 96,
+      "y": 130,
+      "w": 80,
+      "h": 6
+    },
+    {
+      "type": "solid",
+      "x": 32,
+      "y": 112,
+      "w": 48,
+      "h": 16
+    },
+    {
+      "type": "solid",
+      "x": 176,
+      "y": 112,
+      "w": 48,
+      "h": 16
+    },
+    {
+      "type": "solid",
+      "x": 160,
+      "y": 64,
+      "w": 48,
+      "h": 16
+    },
+    {
+      "type": "solid",
+      "x": 208,
+      "y": 48,
+      "w": 48,
+      "h": 16
+    },
+    {
+      "type": "solid",
+      "x": 144,
+      "y": 16,
+      "w": 48,
+      "h": 16
+    },
+    {
+      "type": "one_way",
+      "x": 80,
+      "y": 96,
+      "w": 32,
+      "h": 10
+    },
+    {
+      "type": "one_way",
+      "x": 224,
+      "y": 96,
+      "w": 32,
+      "h": 10
+    },
+    {
+      "type": "one_way",
+      "x": 48,
+      "y": 64,
+      "w": 32,
+      "h": 10
+    },
+    {
+      "type": "one_way",
+      "x": 96,
+      "y": 32,
+      "w": 32,
+      "h": 10
+    },
+    {
+      "type": "hazard",
+      "x": 112,
+      "y": 144,
+      "w": 64,
+      "h": 32
+    },
+    {
+      "type": "climb",
+      "x": 128,
+      "y": 32,
+      "w": 6,
+      "h": 80
+    },
+    {
+      "type": "kill",
+      "x": 112,
+      "y": 160,
+      "w": 64,
+      "h": 16
+    }
+  ],
+  "tilemap": {
+    "tile": 16,
+    "cols": 20,
+    "rows": 11,
+    "codes": {
+      "empty": 0,
+      "solid": 1,
+      "one_way": 2,
+      "hazard": 3,
+      "climb": 4,
+      "kill": 5
+    },
+    "grid": [
+      [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      [
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        1,
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1
+      ],
+      [
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        2,
+        2,
+        4,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1
+      ],
+      [
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        4,
+        0,
+        0,
+        0,
+        0,
+        1,
+        1,
+        1,
+        0,
+        0,
+        0,
+        1
+      ],
+      [
+        1,
+        0,
+        0,
+        2,
+        2,
+        0,
+        0,
+        0,
+        4,
+        0,
+        1,
+        1,
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1
+      ],
+      [
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        4,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1
+      ],
+      [
+        1,
+        0,
+        0,
+        0,
+        0,
+        2,
+        2,
+        0,
+        4,
+        0,
+        0,
+        0,
+        0,
+        0,
+        2,
+        2,
+        0,
+        0,
+        0,
+        1
+      ],
+      [
+        1,
+        0,
+        1,
+        1,
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        1,
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1
+      ],
+      [
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        1,
+        1,
+        1,
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1
+      ],
+      [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        3,
+        3,
+        3,
+        3,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        5,
+        5,
+        5,
+        5,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ]
+    ]
+  },
+  "validation": {
+    "ok": true,
+    "warnings": [],
+    "hard_gaps": [],
+    "platform_count": 13
+  },
+  "prompt": "Rustvale Hollow \u2014 dark fantasy autumn forest. Soft diffused amber canopy light, violet mist, Maglione layers (sky/far/close_bg/main/near), volumetric creek, leaf heaps, FG margin foliage, game-ready collision/tilemap.",
+  "layers": [
+    {
+      "name": "sky",
+      "role": "sky",
+      "scroll": 0.0,
+      "outline": false,
+      "interactive": false,
+      "z": -1
+    },
+    {
+      "name": "far",
+      "role": "parallax_far",
+      "scroll": 0.2,
+      "outline": false,
+      "interactive": false,
+      "z": 0
+    },
+    {
+      "name": "close_bg",
+      "role": "close_bg",
+      "scroll": 1.0,
+      "outline": false,
+      "interactive": false,
+      "z": 2
+    },
+    {
+      "name": "world",
+      "role": "main",
+      "scroll": 1.0,
+      "outline": true,
+      "interactive": true,
+      "z": 3
+    },
+    {
+      "name": "props",
+      "role": "main",
+      "scroll": 1.0,
+      "outline": true,
+      "interactive": true,
+      "z": 3
+    },
+    {
+      "name": "near",
+      "role": "foreground",
+      "scroll": 1.15,
+      "outline": false,
+      "interactive": false,
+      "z": 5
+    },
+    {
+      "name": "shade",
+      "role": "fx",
+      "blend": "multiply"
+    },
+    {
+      "name": "beams",
+      "role": "fx",
+      "blend": "screen"
+    },
+    {
+      "name": "glow",
+      "role": "fx",
+      "blend": "addition"
+    },
+    {
+      "name": "fg_fx",
+      "role": "foreground",
+      "scroll": 1.15,
+      "outline": false,
+      "interactive": false,
+      "z": 5
+    }
+  ]
+}
