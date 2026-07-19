@@ -9,3 +9,5 @@ examples/out/*
 !examples/out/platformer_stage.png
 !examples/out/platformer_stage.gif
 !examples/out/platformer_stage_collision.json
+dist/
+*.skill
