@@ -6,9 +6,11 @@
   const loader = document.getElementById("loader");
   window.addEventListener("load", () => {
     requestAnimationFrame(() => {
-      setTimeout(() => loader?.classList.add("is-done"), reducedMotion ? 0 : 700);
+      setTimeout(() => loader?.classList.add("is-done"), reducedMotion ? 0 : 550);
     });
   });
+  /* Safety: never leave the loader stuck */
+  setTimeout(() => loader?.classList.add("is-done"), 2200);
 
   /* ---------- Custom cursor ---------- */
   const cursor = document.getElementById("cursor");
@@ -60,8 +62,14 @@
   const menuBtn = document.getElementById("menuBtn");
   const mobileNav = document.getElementById("mobileNav");
 
+  const progress = document.getElementById("scrollProgress");
   const onScrollNav = () => {
     nav?.classList.toggle("is-scrolled", window.scrollY > 24);
+    if (progress) {
+      const max = document.documentElement.scrollHeight - window.innerHeight;
+      const pct = max > 0 ? (window.scrollY / max) * 100 : 0;
+      progress.style.width = `${pct}%`;
+    }
   };
   onScrollNav();
   window.addEventListener("scroll", onScrollNav, { passive: true });
@@ -120,9 +128,20 @@
     revealEls.forEach((el) => el.classList.add("is-in"));
   }
 
-  /* Kick hero brand in after loader */
+  /* Kick hero brand in after loader — keep text readable if timing slips */
   const brand = document.querySelector(".hero__brand");
-  setTimeout(() => brand?.classList.add("is-in"), reducedMotion ? 0 : 850);
+  const revealBrand = () => {
+    if (!brand) return;
+    brand.classList.add("is-ready");
+    requestAnimationFrame(() => brand.classList.add("is-in"));
+    setTimeout(() => {
+      brand.querySelectorAll(".char").forEach((ch) => {
+        ch.style.opacity = "1";
+        ch.style.transform = "none";
+      });
+    }, 1600);
+  };
+  setTimeout(revealBrand, reducedMotion ? 0 : 780);
 
   /* ---------- Particles ---------- */
   const canvas = document.getElementById("particles");
