@@ -15,17 +15,18 @@ SKILL = Path(__file__).resolve().parents[2] / ".cursor" / "skills" / "aseprite-p
 sys.path.insert(0, str(SKILL / "scripts"))
 
 from aseprite_io import Cel, Sprite
-from atmosphere import drifting_clouds_frame, soft_sky_pixels
+from atmosphere import soft_sky_pixels
 from lighting_logic import LightingSetup, apply_time_of_day, stamp_diffused, stamp_lighting
 from location_gen import (
     LocationSpec, PlatformerPhysics, Prop, Rect,
     ensure_game_ready, make_platformer_room, platformer_layer_stack, theme_colors,
 )
-from penitent_style import blood_stain, olive_tree, snow_dither_band, stone_block
+from penitent_style import blood_stain, olive_tree, stone_block
+from loop_fx import bake_drift_frames, make_cloud_field, make_snow_field, stamp_platform
 
 OUT = Path(__file__).resolve().parent
 W, H, TILE = 320, 176, 16
-FRAMES = 8
+FRAMES = 12
 
 
 def put(s, x, y, c, layer, frame=0):
@@ -106,29 +107,22 @@ def draw_static(s: Sprite, loc: LocationSpec) -> None:
     # Main terrain
     for r in loc.solids:
         if r.y >= loc.ground_y:
-            s.stamp(stone_block(r.x, r.y, r.w, r.h, stone, outline=True), "world")
-            # Snow cap on walkable top
+            stamp_platform(s, r.x, r.y, r.w, r.h, stone, surface=snow, style="snow", seed=r.x)
             for x in range(r.x, r.x + r.w):
                 put(s, x, r.y - 1, snow[1], "props")
                 if (x + r.y) % 3 == 0:
                     put(s, x, r.y - 2, snow[0], "props")
         elif r.h <= 8 and r.y < loc.ground_y and r.w > TILE:
-            # trunk bridge
-            for y in range(r.y, r.y + r.h):
-                for x in range(r.x, r.x + r.w):
-                    put(s, x, y, wood[1] if y == r.y else wood[0], "world")
-            for x in range(r.x, r.x + r.w):
-                put(s, x, r.y, stone[3] if len(stone) > 3 else stone[-1], "world")
-                put(s, x, r.y - 1, snow[0], "props")
+            stamp_platform(s, r.x, r.y, r.w, r.h, wood + stone[:1], surface=snow, style="wood", seed=r.x)
         elif r.y < loc.ground_y and r.w < W // 2:
-            s.stamp(stone_block(r.x, r.y, r.w, r.h, stone, outline=True), "world")
+            stamp_platform(s, r.x, r.y, r.w, r.h, stone, surface=snow, style="stone", seed=r.x + r.y)
             for x in range(r.x, r.x + r.w):
                 put(s, x, r.y - 1, snow[1], "props")
         elif r.y == 0 or r.x == 0 or r.x >= W - TILE:
-            s.stamp(stone_block(r.x, r.y, r.w, min(r.h, H - r.y), stone, outline=True), "world")
+            stamp_platform(s, r.x, r.y, r.w, min(r.h, H - r.y), stone, style="stone", seed=r.x + r.y)
 
     for r in loc.one_way:
-        s.stamp(stone_block(r.x, r.y, r.w, r.h, stone, outline=True), "world")
+        stamp_platform(s, r.x, r.y, r.w, r.h, stone, surface=snow, style="dirt", seed=r.x)
         for x in range(r.x, r.x + r.w):
             put(s, x, r.y - 1, snow[0], "props")
 
@@ -204,31 +198,33 @@ def build():
         else:
             s.add_layer(n)
     s.add_layer("snow_fx", blend_mode="normal")
+    s.add_layer("cloud_fx", blend_mode="screen")
     for _ in range(1, FRAMES):
-        s.add_frame(120)
+        s.add_frame(100)
     draw_static(s, loc)
     copy_static(s)
     setup = make_lights(loc)
     pal = theme_colors(loc.theme)
+    snow_frames = bake_drift_frames(
+        make_snow_field(W, H, count=36, seed=3, color=pal["snow"][1]), FRAMES, 1,
+    )
+    cloud_frames = bake_drift_frames(
+        make_cloud_field(W, H, count=2, seed=3, direction=1, fg=False, color=(190, 195, 210, 45)),
+        FRAMES, 1,
+    )
     for f in range(FRAMES):
-        for fx in ("shade", "beams", "glow", "snow_fx"):
+        for fx in ("shade", "beams", "glow", "snow_fx", "cloud_fx"):
             s.ensure_cel(fx, f).clear()
-        stamp_diffused(s, color=(200, 210, 230), strength=0.32, frame=f, open_sky=0.7)
+        stamp_diffused(s, color=(200, 210, 230), strength=0.30, frame=f, open_sky=0.7)
         stamp_lighting(s, setup, frame=f, stamp_shade=(f == 0))
         if f > 0:
             src = s._resolve_layer("shade").cels[0]
             if src:
                 s._resolve_layer("shade").cels[f] = Cel(x=src.x, y=src.y, opacity=src.opacity, pixels=dict(src.pixels))
-        # Falling snow
-        for i in range(35):
-            x = (i * 37 + f * 3) % W
-            y = (i * 53 + f * 4) % H
-            put(s, x, y, pal["snow"][i % 2], "snow_fx", f)
-        # Soft bg clouds
-        s.stamp(drifting_clouds_frame(W, H, f, FRAMES, layer="bg", seed=3, count=2,
-                                      color=(190, 195, 210, 45)), layer="beams", frame=f)
-        s.set_frame_duration(f, 120)
-    s.add_tag("ambient", 0, FRAMES - 1, direction="pingpong")
+        s.stamp(snow_frames[f], layer="snow_fx", frame=f)
+        s.stamp(cloud_frames[f], layer="cloud_fx", frame=f)
+        s.set_frame_duration(f, 100)
+    s.add_tag("ambient", 0, FRAMES - 1, direction="forward")
     return s, loc
 
 
@@ -236,13 +232,14 @@ def main():
     s, loc = build()
     s.save(OUT / "olive_wither_hills.aseprite")
     s.preview(OUT / "olive_wither_hills.png", scale=2, frame=0, background=(50, 55, 65, 255))
-    order = list(range(FRAMES)) + list(range(FRAMES - 2, 0, -1))
-    s.preview_gif(OUT / "olive_wither_hills.gif", scale=2, background=(50, 55, 65, 255), frames=order)
+    s.preview_gif(OUT / "olive_wither_hills.gif", scale=2, background=(50, 55, 65, 255),
+                  frames=list(range(FRAMES)))
     game = loc.export_game()
     game["style"] = "blasphemous_olive_wither"
-    game["prompt"] = "Olive Wither Hills — cold ash paths, twisted olives, snow dither, ravine, muted crimson."
+    game["ambient"] = {"frames": FRAMES, "direction": "forward"}
+    game["prompt"] = "Olive Wither Hills v2 — multi-layer snow platforms, one-way snow/clouds."
     (OUT / "olive_wither_hills_game.json").write_text(json.dumps(game, indent=2))
-    print("Olive Wither Hills", game["validation"], f"platforms={game['validation']['platform_count']}")
+    print("Olive Wither Hills", game["validation"], f"frames={FRAMES}")
 
 
 if __name__ == "__main__":

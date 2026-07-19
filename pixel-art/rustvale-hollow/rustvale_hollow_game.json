@@ -29,7 +29,7 @@
       "y": 112,
       "w": 16,
       "h": 32,
-      "target": "next_hollow"
+      "target": "next"
     }
   ],
   "camera": {
@@ -46,33 +46,51 @@
   "parallax": [
     {
       "name": "sky",
-      "role": "sky",
       "scroll": 0.0,
-      "z": -1
+      "z": 0,
+      "role": "sky"
     },
     {
-      "name": "far",
-      "role": "parallax_far",
-      "scroll": 0.2,
-      "z": 0
+      "name": "bg_far",
+      "scroll": 0.15,
+      "z": 1,
+      "role": "parallax_far"
+    },
+    {
+      "name": "bg_mid",
+      "scroll": 0.35,
+      "z": 2,
+      "role": "parallax_mid"
+    },
+    {
+      "name": "bg_near",
+      "scroll": 0.65,
+      "z": 3,
+      "role": "parallax_near"
     },
     {
       "name": "close_bg",
-      "role": "close_bg",
       "scroll": 1.0,
-      "z": 2
+      "z": 4,
+      "role": "close_bg"
     },
     {
       "name": "world",
-      "role": "main",
       "scroll": 1.0,
-      "z": 3
+      "z": 5,
+      "role": "main"
     },
     {
-      "name": "near",
-      "role": "foreground",
-      "scroll": 1.15,
-      "z": 5
+      "name": "props",
+      "scroll": 1.0,
+      "z": 6,
+      "role": "main"
+    },
+    {
+      "name": "fg",
+      "scroll": 1.25,
+      "z": 7,
+      "role": "foreground"
     }
   ],
   "lamps": [
@@ -150,11 +168,6 @@
       "y": 142
     },
     {
-      "kind": "root",
-      "x": 160,
-      "y": 128
-    },
-    {
       "kind": "checkpoint",
       "x": 40,
       "y": 112
@@ -206,9 +219,9 @@
     {
       "type": "solid",
       "x": 96,
-      "y": 130,
+      "y": 128,
       "w": 80,
-      "h": 6
+      "h": 8
     },
     {
       "type": "solid",
@@ -558,78 +571,10 @@
     "hard_gaps": [],
     "platform_count": 13
   },
-  "prompt": "Rustvale Hollow \u2014 dark fantasy autumn forest. Soft diffused amber canopy light, violet mist, Maglione layers (sky/far/close_bg/main/near), volumetric creek, leaf heaps, FG margin foliage, game-ready collision/tilemap.",
-  "layers": [
-    {
-      "name": "sky",
-      "role": "sky",
-      "scroll": 0.0,
-      "outline": false,
-      "interactive": false,
-      "z": -1
-    },
-    {
-      "name": "far",
-      "role": "parallax_far",
-      "scroll": 0.2,
-      "outline": false,
-      "interactive": false,
-      "z": 0
-    },
-    {
-      "name": "close_bg",
-      "role": "close_bg",
-      "scroll": 1.0,
-      "outline": false,
-      "interactive": false,
-      "z": 2
-    },
-    {
-      "name": "world",
-      "role": "main",
-      "scroll": 1.0,
-      "outline": true,
-      "interactive": true,
-      "z": 3
-    },
-    {
-      "name": "props",
-      "role": "main",
-      "scroll": 1.0,
-      "outline": true,
-      "interactive": true,
-      "z": 3
-    },
-    {
-      "name": "near",
-      "role": "foreground",
-      "scroll": 1.15,
-      "outline": false,
-      "interactive": false,
-      "z": 5
-    },
-    {
-      "name": "shade",
-      "role": "fx",
-      "blend": "multiply"
-    },
-    {
-      "name": "beams",
-      "role": "fx",
-      "blend": "screen"
-    },
-    {
-      "name": "glow",
-      "role": "fx",
-      "blend": "addition"
-    },
-    {
-      "name": "fg_fx",
-      "role": "foreground",
-      "scroll": 1.15,
-      "outline": false,
-      "interactive": false,
-      "z": 5
-    }
-  ]
+  "ambient": {
+    "frames": 12,
+    "direction": "forward",
+    "duration_ms": 100
+  },
+  "prompt": "Rustvale Hollow v2 \u2014 Terraria parallax, multi-layer platforms, banded water, one-way clouds/leaves (spawn/despawn), soft lighting."
 }

@@ -233,32 +233,26 @@ def drifting_clouds_frame(
     width: int,
     height: int,
     frame: int,
-    frames: int = 8,
+    frames: int = 12,
     layer: str = "fg",  # fg | bg
     seed: int = 11,
     count: int = 4,
     color: Optional[Color] = None,
+    direction: int = 1,
 ) -> List[Pixel]:
-    """Animated soft clouds. fg = darker/nearer, bg = pale distant."""
-    rng = random.Random(seed)
-    if color is None:
-        color = (40, 30, 48, 70) if layer == "fg" else (160, 150, 190, 55)
-    speed = 0.55 if layer == "fg" else 0.25
-    scale_base = 1.35 if layer == "fg" else 0.9
-    y_band = (int(height * 0.05), int(height * 0.35)) if layer == "bg" else (
-        int(height * 0.55), int(height * 0.92)
+    """One-way drifting clouds (spawn/despawn off-screen — no mid-screen wrap).
+
+    Prefer loop_fx.make_cloud_field + bake_drift_frames for multi-frame builds.
+    This helper simulates `frame` steps from a fresh field (deterministic).
+    """
+    from loop_fx import make_cloud_field, step_field, stamp_field
+    field = make_cloud_field(
+        width, height, count=count, seed=seed, direction=direction,
+        fg=(layer == "fg"), color=color,
     )
-    pixels: List[Pixel] = []
-    for i in range(count):
-        base_x = rng.uniform(0, width)
-        cy = rng.randint(*y_band)
-        sc = scale_base * rng.uniform(0.8, 1.3)
-        drift = (frame / max(1, frames)) * width * speed * (0.6 + 0.4 * (i % 3) / 2)
-        cx = int((base_x + drift) % (width + 40) - 20)
-        # Gentle vertical bob
-        bob = int(math.sin((frame / max(1, frames) + i * 0.2) * math.tau) * (2 if layer == "fg" else 1))
-        pixels.extend(cloud_pixels(cx, cy + bob, scale=sc, color=color, seed=seed + i * 17, soft=True))
-    return pixels
+    for _ in range(frame):
+        step_field(field, 1)
+    return stamp_field(field)
 
 
 # ---------------------------------------------------------------------------
@@ -272,102 +266,15 @@ def water_volume_pixels(
     h: int,
     palette: Sequence[Color],
     frame: int = 0,
-    frames: int = 8,
+    frames: int = 12,
     foam: bool = True,
     caustics: bool = True,
     reflection: bool = True,
     seed: int = 2,
 ) -> Dict[str, List[Pixel]]:
-    """Volumetric creek/pool. Returns {body, surface, glow} pixel lists.
-
-    body → world/mid, surface → mid, glow → addition (caustic shimmer).
-    palette: dark → mid → bright (len ≥ 2).
-    """
-    deep = palette[0]
-    mid = palette[min(1, len(palette) - 1)]
-    bright = palette[min(2, len(palette) - 1)] if len(palette) > 2 else mid
-    # Boost mid/bright so volume reads at small pixel sizes
-    lit = (_clamp(bright[0] + 50), _clamp(bright[1] + 45), _clamp(bright[2] + 35), 255)
-    body: List[Pixel] = []
-    surface: List[Pixel] = []
-    glow: List[Pixel] = []
-
-    # Depth body: bright lip → mid bowl → near-black floor + side darkening
-    for row in range(h):
-        t = row / max(1, h - 1)
-        for col in range(w):
-            cx = col / max(1, w - 1)
-            edge = min(cx, 1.0 - cx) * 2.0  # 0 at banks, 1 at center
-            bowl = 1.0 - 4.0 * (cx - 0.5) ** 2
-            depth = min(1.0, t * 0.85 + (1.0 - bowl) * 0.4)
-            if t < 0.12:
-                c = _mix(lit, mid, t / 0.12)
-            elif depth < 0.45:
-                c = _mix(mid, deep, (depth - 0.12) / 0.33)
-            else:
-                c = (
-                    _clamp(deep[0] * (0.55 + 0.45 * edge)),
-                    _clamp(deep[1] * (0.55 + 0.45 * edge)),
-                    _clamp(deep[2] * (0.65 + 0.35 * edge)),
-                    255,
-                )
-            # Soft murk / silt bands
-            n = ((col * 17 + row * 31 + seed) % 9) / 9.0
-            if 0.35 < n < 0.5 and t > 0.3:
-                c = _mix(c, mid, 0.35)
-            # Vertical volume striations (read as thickness)
-            if col % 5 == 0 and t > 0.2:
-                c = _mix(c, deep, 0.4)
-            body.append((x + col, y + row, (c[0], c[1], c[2], 255)))
-
-    # Animated multi-row surface for thickness
-    phase = (frame / max(1, frames)) * math.tau
-    for col in range(w):
-        wave = int(math.sin(phase + col * 0.35) * 1.4 + math.sin(phase * 1.7 + col * 0.18) * 0.9)
-        sy = y + wave
-        surface.append((x + col, sy, lit))
-        surface.append((x + col, sy + 1, (_clamp(lit[0] - 30), _clamp(lit[1] - 20), _clamp(lit[2] - 10), 230)))
-        if foam:
-            if col % 2 == 0:
-                surface.append((x + col, sy - 1, (220, 230, 240, 160)))
-            if col % 4 == 0:
-                surface.append((x + col, sy + 2, (180, 200, 220, 100)))
-        # Dark subsurface lip = volume cue
-        surface.append((x + col, sy + 3, (deep[0], deep[1], deep[2], 220)))
-        # Inner highlight band (wet sheen)
-        if 2 < col < w - 2 and (col + frame) % 6 < 2:
-            surface.append((x + col, sy + 5, (_clamp(mid[0] + 40), _clamp(mid[1] + 50), _clamp(mid[2] + 40), 140)))
-
-    # Caustic shimmer (addition) — denser near surface
-    if caustics:
-        n_c = max(4, w // 8)
-        for i in range(n_c):
-            cx = x + int((i + 0.5) * w / n_c) + int(math.sin(phase + i * 1.3) * 4)
-            for row in range(1, h - 1):
-                t = row / h
-                pulse = 0.55 + 0.45 * math.sin(phase * 2.2 + i + row * 0.55)
-                a = _clamp((90 * (1.0 - t) + 25) * pulse)
-                if a > 6:
-                    glow.append((cx, y + row, (140, 200, 220, a)))
-                    glow.append((cx + 1, y + row, (100, 170, 200, a // 2)))
-
-    # Soft reflection strip above surface
-    if reflection:
-        for col in range(w):
-            for dy in range(1, 7):
-                a = _clamp(55 - dy * 8)
-                if a > 0:
-                    surface.append((
-                        x + col, y - dy,
-                        (_clamp(lit[0] - 10), _clamp(lit[1] - 5), _clamp(lit[2] + 15), a),
-                    ))
-
-    # Wet bank lips
-    for side, bx in ((-1, x), (1, x + w - 1)):
-        for i in range(5):
-            body.append((bx + side * (1 if i < 3 else 0), y - 1 + i // 2, (mid[0], mid[1], mid[2], 220)))
-
-    return {"body": body, "surface": surface, "glow": glow}
+    """Banded volumetric water — see loop_fx.water_volume_pixels (no vertical hatch)."""
+    from loop_fx import water_volume_pixels as _wv
+    return _wv(x, y, w, h, palette, frame=frame, frames=frames, seed=seed)
 
 
 def stamp_water(
@@ -375,17 +282,15 @@ def stamp_water(
     x: int, y: int, w: int, h: int,
     palette: Sequence[Color],
     frame: int = 0,
-    frames: int = 8,
+    frames: int = 12,
     body_layer: str = "world",
     surface_layer: str = "mid",
     glow_layer: str = "glow",
     **kw,
 ) -> None:
-    layers = water_volume_pixels(x, y, w, h, palette, frame, frames, **kw)
-    sprite.stamp(layers["body"], layer=body_layer, frame=frame)
-    sprite.stamp(layers["surface"], layer=surface_layer, frame=frame)
-    if layers["glow"]:
-        sprite.stamp(layers["glow"], layer=glow_layer, frame=frame)
+    from loop_fx import stamp_water as _sw
+    _sw(sprite, x, y, w, h, palette, frame=frame, frames=frames,
+        body_layer=body_layer, surface_layer=surface_layer, glow_layer=glow_layer)
 
 
 # ---------------------------------------------------------------------------
@@ -498,25 +403,14 @@ def falling_leaves_frame(
     width: int,
     height: int,
     frame: int,
-    frames: int = 8,
+    frames: int = 12,
     colors: Sequence[Color] = ((140, 40, 36, 255), (190, 70, 40, 255), (220, 130, 50, 255)),
-    count: int = 32,
+    count: int = 28,
     seed: int = 5,
 ) -> List[Pixel]:
-    """Tumbling volumetric leaves — multi-pixel, sway + spin."""
-    rng = random.Random(seed)
-    pixels: List[Pixel] = []
-    for i in range(count):
-        base_x = rng.uniform(0, width)
-        speed = rng.uniform(0.55, 1.5)
-        sway = rng.uniform(0.5, 1.4)
-        phase = rng.random()
-        tumble = rng.randint(0, 2)
-        y = int((rng.random() * height + frame * 2.4 * speed) % height)
-        x = int(base_x + math.sin((frame / max(1, frames) + phase) * math.tau) * 7 * sway) % width
-        flip = ((frame + i) // 2) % 2 == 0
-        shape = (tumble + frame // 2) % 3
-        # Depth: some more transparent (farther)
-        a = 255 if i % 3 else 160
-        pixels.extend(leaf_sprite_pixels(x, y, colors, shape=shape, flip=flip, alpha=a))
-    return pixels
+    """Falling leaves — fall down, despawn below, respawn above (no Y wrap)."""
+    from loop_fx import make_leaf_field, step_field, stamp_field
+    field = make_leaf_field(width, height, count=count, seed=seed, colors=colors)
+    for _ in range(frame):
+        step_field(field, 1)
+    return stamp_field(field)
