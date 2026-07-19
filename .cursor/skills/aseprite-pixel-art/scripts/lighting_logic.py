@@ -84,13 +84,18 @@ def apply_time_of_day(setup: LightingSetup, time: Optional[str] = None) -> Light
     return setup
 
 
-def flicker_intensity(frame: int, base: float = 1.0, amount: float = 0.15, seed: int = 0) -> float:
-    t = frame * 0.37 + seed * 0.11
-    wave = (
-        math.sin(t) + 0.5 * math.sin(t * 2.3) + 0.25 * math.sin(t * 4.1)
-    ) / 1.75
-    jitter = ((math.sin((frame + seed) * 12.9898) * 43758.5453) % 1.0) - 0.5
-    return max(0.0, base + amount * wave + amount * 0.2 * jitter)
+def flicker_intensity(frame: int, base: float = 1.0, amount: float = 0.06, seed: int = 0) -> float:
+    """Subtle lamp flicker. Keep amount low — high values look like lighting 'curves'.
+
+    Ambient shafts should pass amount≈0 (stable). Torches ≈0.05–0.1.
+    """
+    if amount <= 0.001:
+        return base
+    t = frame * 0.21 + seed * 0.07
+    # One slow wave + tiny jitter — avoid stacked high-frequency sines
+    wave = math.sin(t)
+    jitter = (((seed * 17 + frame * 3) % 100) / 100.0 - 0.5) * 0.35
+    return max(0.0, base + amount * wave + amount * jitter)
 
 
 def shade_wash_pixels(
@@ -127,7 +132,7 @@ def point_light_pixels(
     falloff: float = 2.0,
 ) -> List[Pixel]:
     """Radial addition/screen glow for a point light."""
-    inten = light.intensity * flicker_intensity(frame, seed=light.flicker_seed)
+    inten = light.intensity * flicker_intensity(frame, amount=0.07, seed=light.flicker_seed)
     cr, cg, cb = light.color
     rad = max(1.0, light.radius)
     pixels: List[Pixel] = []
@@ -139,7 +144,7 @@ def point_light_pixels(
             if d > 1.0:
                 continue
             t = (1.0 - d) ** falloff
-            a = _clamp(220 * t * inten)
+            a = _clamp(200 * t * inten)
             if a > 0:
                 pixels.append((x, y, (cr, cg, cb, a)))
     return pixels
@@ -149,8 +154,9 @@ def shaft_light_pixels(
     light: LightSource,
     frame: int = 0,
 ) -> Tuple[List[Pixel], List[Pixel]]:
-    """God-ray cone. Returns (screen_pixels, addition_pixels)."""
-    inten = light.intensity * flicker_intensity(frame, amount=0.12, seed=light.flicker_seed)
+    """God-ray cone. Soft edges; nearly stable (tiny flicker only)."""
+    # Shafts should not pulse hard — that reads as curved banding
+    inten = light.intensity * flicker_intensity(frame, amount=0.02, seed=light.flicker_seed)
     cr, cg, cb = light.color
     aim = math.radians(light.aim_deg)
     half = math.radians(light.cone_deg) / 2.0
@@ -158,38 +164,35 @@ def shaft_light_pixels(
     screen: List[Pixel] = []
     add: List[Pixel] = []
 
-    # March along aim
     steps = int(length) + 1
     for i in range(steps):
         t = i / max(1, steps - 1)
         dist = t * length
-        # Cone widens with distance
-        width = 1.5 + t * length * math.tan(half)
+        width = 1.8 + t * length * math.tan(half)
         bx = light.x + math.cos(aim) * dist
         by = light.y + math.sin(aim) * dist
-        # Soft cross-section
-        span = int(math.ceil(width * 1.3))
+        span = int(math.ceil(width * 1.2))
         for k in range(-span, span + 1):
-            # Perpendicular offset
             px = bx + math.cos(aim + math.pi / 2) * k
             py = by + math.sin(aim + math.pi / 2) * k
             edge = abs(k) / max(0.5, width)
-            if edge > 1.3:
+            if edge > 1.25:
                 continue
+            # Smooth cosine falloff — no hard dither bands
             if edge <= 1.0:
                 core = 0.5 + 0.5 * math.cos(edge * math.pi)
             else:
-                core = 0.45 * max(0.0, 1.0 - (edge - 1.0) / 0.3)
+                core = 0.35 * max(0.0, 1.0 - (edge - 1.0) / 0.25)
             core *= core
-            fade = 1.0 - 0.35 * t
-            a_s = _clamp((65 + 50 * core) * inten * fade)
-            a_a = _clamp((40 + 70 * core) * inten * fade) if edge < 0.85 else 0
+            fade = 1.0 - 0.4 * t
+            a_s = _clamp((45 + 40 * core) * inten * fade)
+            a_a = _clamp((20 + 35 * core) * inten * fade) if edge < 0.7 else 0
             ix, iy = int(round(px)), int(round(py))
             if a_s > 0:
                 screen.append((ix, iy, (cr, cg, cb, a_s)))
             if a_a > 0:
                 add.append((ix, iy, (
-                    min(255, cr + 20), min(255, cg + 15), min(255, cb + 10), a_a
+                    min(255, cr + 15), min(255, cg + 10), min(255, cb + 8), a_a
                 )))
     return screen, add
 

@@ -522,5 +522,9 @@
     "platform_count": 11
   },
   "style": "blasphemous_cistern",
-  "prompt": "Desecrated Cistern \u2014 wet stone, bilge moss, black water, rust chains, grate light, votive candles."
+  "ambient": {
+    "frames": 12,
+    "direction": "forward"
+  },
+  "prompt": "Desecrated Cistern v2 \u2014 multi-layer platforms, banded water, soft lighting."
 }

@@ -15,17 +15,18 @@ SKILL = Path(__file__).resolve().parents[2] / ".cursor" / "skills" / "aseprite-p
 sys.path.insert(0, str(SKILL / "scripts"))
 
 from aseprite_io import Cel, Sprite
-from atmosphere import soft_sky_pixels, stamp_water
+from atmosphere import soft_sky_pixels
 from lighting_logic import LightingSetup, apply_time_of_day, stamp_diffused, stamp_lighting
 from location_gen import (
     LocationSpec, PlatformerPhysics, Prop, Rect,
     ensure_game_ready, make_platformer_room, platformer_layer_stack, theme_colors,
 )
-from penitent_style import candle, column, stone_block
+from penitent_style import candle, column
+from loop_fx import stamp_platform, stamp_water
 
 OUT = Path(__file__).resolve().parent
 W, H, TILE = 320, 176, 16
-FRAMES = 8
+FRAMES = 12
 
 
 def put(s, x, y, c, layer, frame=0):
@@ -112,26 +113,24 @@ def draw_static(s: Sprite, loc: LocationSpec) -> None:
         for y in range(40, loc.ground_y - 10, 7):
             put(s, cx - 2, y, accent[0], "close_bg")
 
-    # Main solids
+    # Main solids — multi-layer platforms
     for r in loc.solids:
         if r.y == 0 or r.x == 0 or r.x >= W - TILE:
-            s.stamp(stone_block(r.x, r.y, r.w, min(r.h, H - r.y), stone, outline=True), "world")
+            stamp_platform(s, r.x, r.y, r.w, min(r.h, H - r.y), stone, style="stone", seed=r.x)
         elif r.y >= loc.ground_y or (r.y < loc.ground_y and r.w < W // 2):
-            s.stamp(stone_block(r.x, r.y, r.w, r.h, stone, outline=True), "world")
-            # Wet lip
+            stamp_platform(s, r.x, r.y, r.w, r.h, stone, surface=accent, style="stone", seed=r.x + r.y)
             for x in range(r.x, r.x + r.w, 2):
-                put(s, x, r.y, (stone[2][0] + 20, stone[2][1] + 25, stone[2][2] + 20, 255), "props")
+                put(s, x, r.y, (min(255, stone[2][0] + 20), min(255, stone[2][1] + 25), min(255, stone[2][2] + 20), 255), "props")
 
     for r in loc.one_way:
-        s.stamp(stone_block(r.x, r.y, r.w, r.h, stone, outline=True), "world")
+        stamp_platform(s, r.x, r.y, r.w, r.h, stone, surface=accent, style="dirt", seed=r.x)
         for x in range(r.x, r.x + r.w):
             put(s, x, r.y - 1, accent[1], "props")
 
-    # Water body
+    # Water body — banded volume
     for r in loc.hazards:
         stamp_water(s, r.x, r.y, r.w, r.h, water, frame=0, frames=FRAMES,
                     body_layer="world", surface_layer="props", glow_layer="glow")
-        # Rust pipes into water
         for px in (r.x + 10, r.x + r.w - 12):
             for y in range(r.y - 20, r.y):
                 put(s, px, y, rust[0], "props")
@@ -232,7 +231,7 @@ def build():
             a = 160 + int(25 * math.sin(f * 0.8 + lx * 0.1))
             put(s, lx, ly - 3, (255, 200, 100, max(0, a)), "glow", f)
         s.set_frame_duration(f, 130)
-    s.add_tag("ambient", 0, FRAMES - 1, direction="pingpong")
+    s.add_tag("ambient", 0, FRAMES - 1, direction="forward")
     return s, loc
 
 
@@ -240,13 +239,14 @@ def main():
     s, loc = build()
     s.save(OUT / "desecrated_cistern.aseprite")
     s.preview(OUT / "desecrated_cistern.png", scale=2, frame=0, background=(6, 10, 12, 255))
-    order = list(range(FRAMES)) + list(range(FRAMES - 2, 0, -1))
-    s.preview_gif(OUT / "desecrated_cistern.gif", scale=2, background=(6, 10, 12, 255), frames=order)
+    s.preview_gif(OUT / "desecrated_cistern.gif", scale=2, background=(6, 10, 12, 255),
+                  frames=list(range(FRAMES)))
     game = loc.export_game()
     game["style"] = "blasphemous_cistern"
-    game["prompt"] = "Desecrated Cistern — wet stone, bilge moss, black water, rust chains, grate light, votive candles."
+    game["ambient"] = {"frames": FRAMES, "direction": "forward"}
+    game["prompt"] = "Desecrated Cistern v2 — multi-layer platforms, banded water, soft lighting."
     (OUT / "desecrated_cistern_game.json").write_text(json.dumps(game, indent=2))
-    print("Desecrated Cistern", game["validation"], f"platforms={game['validation']['platform_count']}")
+    print("Desecrated Cistern", game["validation"], f"frames={FRAMES}")
 
 
 if __name__ == "__main__":

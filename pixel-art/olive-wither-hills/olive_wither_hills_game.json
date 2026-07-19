@@ -497,5 +497,9 @@
     "platform_count": 11
   },
   "style": "blasphemous_olive_wither",
-  "prompt": "Olive Wither Hills \u2014 cold ash paths, twisted olives, snow dither, ravine, muted crimson."
+  "ambient": {
+    "frames": 12,
+    "direction": "forward"
+  },
+  "prompt": "Olive Wither Hills v2 \u2014 multi-layer snow platforms, one-way snow/clouds."
 }
