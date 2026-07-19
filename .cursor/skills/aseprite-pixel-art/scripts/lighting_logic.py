@@ -154,15 +154,16 @@ def shaft_light_pixels(
     light: LightSource,
     frame: int = 0,
 ) -> Tuple[List[Pixel], List[Pixel]]:
-    """God-ray cone. Soft edges; nearly stable (tiny flicker only)."""
-    # Shafts should not pulse hard — that reads as curved banding
-    inten = light.intensity * flicker_intensity(frame, amount=0.02, seed=light.flicker_seed)
+    """God-ray cone — stable, dithered soft edge (no animated wave banding)."""
+    inten = light.intensity  # no flicker on shafts
     cr, cg, cb = light.color
     aim = math.radians(light.aim_deg)
     half = math.radians(light.cone_deg) / 2.0
     length = max(1.0, light.length)
     screen: List[Pixel] = []
     add: List[Pixel] = []
+    # Bayer 2x2 thresholds for pixel-art soft edges (not smooth gradients)
+    bayer = (0.2, 0.6, 0.8, 0.4)
 
     steps = int(length) + 1
     for i in range(steps):
@@ -171,29 +172,29 @@ def shaft_light_pixels(
         width = 1.8 + t * length * math.tan(half)
         bx = light.x + math.cos(aim) * dist
         by = light.y + math.sin(aim) * dist
-        span = int(math.ceil(width * 1.2))
+        span = int(math.ceil(width * 1.15))
         for k in range(-span, span + 1):
             px = bx + math.cos(aim + math.pi / 2) * k
             py = by + math.sin(aim + math.pi / 2) * k
             edge = abs(k) / max(0.5, width)
-            if edge > 1.25:
+            if edge > 1.15:
                 continue
-            # Smooth cosine falloff — no hard dither bands
-            if edge <= 1.0:
-                core = 0.5 + 0.5 * math.cos(edge * math.pi)
+            # Harder core, dithered fringe
+            if edge < 0.45:
+                cover = 1.0
             else:
-                core = 0.35 * max(0.0, 1.0 - (edge - 1.0) / 0.25)
-            core *= core
-            fade = 1.0 - 0.4 * t
-            a_s = _clamp((45 + 40 * core) * inten * fade)
-            a_a = _clamp((20 + 35 * core) * inten * fade) if edge < 0.7 else 0
+                thr = bayer[(int(round(px)) & 1) + ((int(round(py)) & 1) << 1)]
+                cover = 1.0 if (1.0 - edge) > thr * 0.7 else 0.0
+            if cover <= 0:
+                continue
+            fade = 1.0 - 0.45 * t
+            a_s = _clamp(55 * inten * fade * (0.7 + 0.3 * (1.0 - edge)))
+            a_a = _clamp(28 * inten * fade) if edge < 0.4 else 0
             ix, iy = int(round(px)), int(round(py))
             if a_s > 0:
                 screen.append((ix, iy, (cr, cg, cb, a_s)))
             if a_a > 0:
-                add.append((ix, iy, (
-                    min(255, cr + 15), min(255, cg + 10), min(255, cb + 8), a_a
-                )))
+                add.append((ix, iy, (min(255, cr + 10), min(255, cg + 8), min(255, cb + 5), a_a)))
     return screen, add
 
 
