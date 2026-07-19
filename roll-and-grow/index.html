@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Roll And Grow — Roblox</title>
+  <meta name="description" content="Roll And Grow [ALPHA] — roll your luck, grow huge, and dominate the server on Roblox." />
+  <meta property="og:title" content="Roll And Grow" />
+  <meta property="og:description" content="Roll. Grow. Flex. The Roblox experience where every roll makes you bigger." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/styles.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='46' fill='%23b8ff3c'/><circle cx='36' cy='40' r='6' fill='%23061a14'/><circle cx='64' cy='40' r='6' fill='%23061a14'/></svg>" />
+</head>
+<body>
+  <div class="noise" aria-hidden="true"></div>
+  <div class="scroll-progress" id="scrollProgress" aria-hidden="true"></div>
+
+  <div class="loader" id="loader" aria-hidden="true">
+    <div class="loader__orb">
+      <span class="loader__shine"></span>
+    </div>
+    <p class="loader__text">Growing…</p>
+  </div>
+
+  <div class="cursor" id="cursor" aria-hidden="true"></div>
+  <div class="cursor-ring" id="cursorRing" aria-hidden="true"></div>
+
+  <header class="nav" id="nav">
+    <a class="nav__brand" href="#top" data-magnetic>
+      <span class="nav__orb" aria-hidden="true"></span>
+      Roll And Grow
+    </a>
+    <nav class="nav__links" aria-label="Primary">
+      <a href="#play">Play</a>
+      <a href="#how">How it works</a>
+      <a href="#features">Features</a>
+      <a href="#sizes">Sizes</a>
+    </nav>
+    <a class="btn btn--small" data-magnetic href="https://www.roblox.com/share?code=82a457c03217c948b368426ccfb2e3ab&type=ExperienceDetails&stamp=1784436202945" target="_blank" rel="noopener noreferrer">
+      Play on Roblox
+    </a>
+    <button class="nav__menu" id="menuBtn" aria-label="Open menu" aria-expanded="false">
+      <span></span><span></span>
+    </button>
+  </header>
+
+  <div class="mobile-nav" id="mobileNav" hidden>
+    <a href="#play">Play</a>
+    <a href="#how">How it works</a>
+    <a href="#features">Features</a>
+    <a href="#sizes">Sizes</a>
+    <a class="btn" href="https://www.roblox.com/share?code=82a457c03217c948b368426ccfb2e3ab&type=ExperienceDetails&stamp=1784436202945" target="_blank" rel="noopener noreferrer">Play on Roblox</a>
+  </div>
+
+  <main id="top">
+    <section class="hero" id="play">
+      <div class="hero__bg" aria-hidden="true">
+        <div class="hero__aurora"></div>
+        <div class="hero__grid"></div>
+        <canvas class="hero__particles" id="particles"></canvas>
+        <div class="hero__orb-stage">
+          <div class="hero__orb" id="heroOrb">
+            <div class="hero__orb-core"></div>
+            <div class="hero__orb-ring"></div>
+            <div class="hero__orb-ring hero__orb-ring--2"></div>
+            <div class="hero__orb-face" aria-hidden="true">
+              <span></span><span></span>
+            </div>
+          </div>
+          <div class="hero__trail" id="heroTrail"></div>
+        </div>
+      </div>
+
+      <div class="hero__content">
+        <p class="hero__status reveal">
+          <span class="pulse-dot"></span>
+          Alpha · Live on Roblox
+        </p>
+        <h1 class="hero__brand" data-split>
+          Roll And Grow
+        </h1>
+        <p class="hero__tag reveal">
+          One roll. Endless size. Become the biggest thing on the server.
+        </p>
+        <div class="hero__cta reveal">
+          <a class="btn btn--primary" data-magnetic href="https://www.roblox.com/share?code=82a457c03217c948b368426ccfb2e3ab&type=ExperienceDetails&stamp=1784436202945" target="_blank" rel="noopener noreferrer">
+            <span>Play Free</span>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M5 12h14M13 6l6 6-6 6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </a>
+          <a class="btn btn--ghost" data-magnetic href="#how">See how it works</a>
+        </div>
+      </div>
+
+      <div class="hero__scroll" aria-hidden="true">
+        <span>Scroll</span>
+        <div class="hero__scroll-line"></div>
+      </div>
+    </section>
+
+    <div class="marquee" aria-hidden="true">
+      <div class="marquee__track">
+        <span>Roll</span><span>•</span><span>Grow</span><span>•</span><span>Flex</span><span>•</span><span>Dominate</span><span>•</span>
+        <span>Roll</span><span>•</span><span>Grow</span><span>•</span><span>Flex</span><span>•</span><span>Dominate</span><span>•</span>
+        <span>Roll</span><span>•</span><span>Grow</span><span>•</span><span>Flex</span><span>•</span><span>Dominate</span><span>•</span>
+        <span>Roll</span><span>•</span><span>Grow</span><span>•</span><span>Flex</span><span>•</span><span>Dominate</span><span>•</span>
+      </div>
+    </div>
+
+    <section class="section how" id="how">
+      <div class="section__head">
+        <h2 class="reveal">Three moves. Infinite size.</h2>
+        <p class="reveal">The loop is simple. The flex is not.</p>
+      </div>
+      <ol class="steps">
+        <li class="step reveal" style="--i:0">
+          <span class="step__num">01</span>
+          <h3>Roll</h3>
+          <p>Hit the roll. Luck decides if you stay small or explode in size.</p>
+        </li>
+        <li class="step reveal" style="--i:1">
+          <span class="step__num">02</span>
+          <h3>Grow</h3>
+          <p>Stack multipliers, chase rare rolls, and watch your orb balloon past everyone.</p>
+        </li>
+        <li class="step reveal" style="--i:2">
+          <span class="step__num">03</span>
+          <h3>Rule</h3>
+          <p>Climb the server. Outgrow your friends. Leave a trail of tiny players behind.</p>
+        </li>
+      </ol>
+    </section>
+
+    <section class="section features" id="features">
+      <div class="section__head">
+        <h2 class="reveal">Built for the biggest flex.</h2>
+        <p class="reveal">Everything in Roll And Grow pushes one feeling: get larger than the map.</p>
+      </div>
+      <div class="feature-rail" id="featureRail">
+        <article class="feature reveal" data-feature="roll">
+          <div class="feature__visual">
+            <div class="dice" id="dice">
+              <div class="dice__face">6</div>
+            </div>
+          </div>
+          <h3>Lucky rolls</h3>
+          <p>Every spin can rewrite your size. Chase the roll that turns you into a legend.</p>
+        </article>
+        <article class="feature reveal" data-feature="grow">
+          <div class="feature__visual">
+            <div class="grow-meter">
+              <div class="grow-meter__fill" id="growFill"></div>
+              <span class="grow-meter__label" id="growLabel">1x</span>
+            </div>
+          </div>
+          <h3>Insane growth</h3>
+          <p>From pebble to planet. Size scales hard — and the whole lobby will notice.</p>
+        </article>
+        <article class="feature reveal" data-feature="multi">
+          <div class="feature__visual">
+            <div class="multi-burst" id="multiBurst">
+              <span>×2</span><span>×5</span><span>×10</span><span>×50</span>
+            </div>
+          </div>
+          <h3>Multipliers</h3>
+          <p>Stack power-ups and rare boosts so every future roll hits even harder.</p>
+        </article>
+        <article class="feature reveal" data-feature="friends">
+          <div class="feature__visual">
+            <div class="friend-orbs">
+              <span style="--s:0.55"></span>
+              <span style="--s:0.8"></span>
+              <span style="--s:1.25"></span>
+            </div>
+          </div>
+          <h3>Friend rivalries</h3>
+          <p>Invite the squad. Race sizes. Crown the server giant in real time.</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="section sizes" id="sizes">
+      <div class="sizes__layout">
+        <div class="sizes__copy">
+          <h2 class="reveal">Watch yourself outgrow the world.</h2>
+          <p class="reveal">Drag the slider — or just watch — as Roll And Grow turns a tiny orb into a sky-blocking titan.</p>
+          <div class="size-control reveal">
+            <label for="sizeSlider">Size preview</label>
+            <input type="range" id="sizeSlider" min="1" max="100" value="12" />
+            <div class="size-control__readout">
+              <span id="sizeValue">12</span>
+              <small>growth units</small>
+            </div>
+          </div>
+        </div>
+        <div class="sizes__stage reveal" aria-hidden="true">
+          <div class="world">
+            <div class="world__ground"></div>
+            <div class="world__player" id="sizeOrb">
+              <div class="world__player-face"><i></i><i></i></div>
+            </div>
+            <div class="world__props">
+              <span class="tree"></span>
+              <span class="tree tree--2"></span>
+              <span class="rock"></span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="cta-band" id="join">
+      <div class="cta-band__glow" aria-hidden="true"></div>
+      <h2 class="reveal" data-split>Stop being tiny.</h2>
+      <p class="reveal">Jump into Roll And Grow [ALPHA] and start rolling for size right now.</p>
+      <a class="btn btn--primary btn--xl reveal" data-magnetic href="https://www.roblox.com/share?code=82a457c03217c948b368426ccfb2e3ab&type=ExperienceDetails&stamp=1784436202945" target="_blank" rel="noopener noreferrer">
+        Launch on Roblox
+      </a>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="footer__brand">
+      <span class="nav__orb" aria-hidden="true"></span>
+      Roll And Grow
+    </div>
+    <p>An ALPHA Roblox experience. Roll your luck. Grow without limits.</p>
+    <a href="https://www.roblox.com/share?code=82a457c03217c948b368426ccfb2e3ab&type=ExperienceDetails&stamp=1784436202945" target="_blank" rel="noopener noreferrer">Open game page →</a>
+  </footer>
+
+  <script src="js/main.js"></script>
+</body>
+</html>
