@@ -100,6 +100,7 @@ When the user asks for a location, pick a theme and stick to its ramp:
 - **castle** — cold stone, red carpet/banners, brass
 - **cave** — purple-brown rock, bioluminescent accents
 - **forest** — mossy greens, warm shafts through canopy
+- **autumn_forest** — dark fantasy autumn: plum bark, rust foliage, violet mist, embers
 - **dungeon** — near-black stone, magenta magic lights
 - **rooftop** — cool night sky, warm window glow below
 
