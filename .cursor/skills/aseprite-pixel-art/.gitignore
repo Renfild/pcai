@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.DS_Store
+examples/out/*
+!examples/out/torch.aseprite
+!examples/out/torch.png
+!examples/out/torch.gif
+!examples/out/platformer_stage.aseprite
+!examples/out/platformer_stage.png
+!examples/out/platformer_stage.gif
+!examples/out/platformer_stage_collision.json
