@@ -9,8 +9,9 @@ from pathlib import Path
 
 SKILL_DIR = Path(__file__).resolve().parents[1]
 OUT_DIR = SKILL_DIR.parent  # .cursor/skills/
-EXCLUDE_DIRS = {"__pycache__", "node_modules", "out"}
+EXCLUDE_DIRS = {"__pycache__", "node_modules"}
 EXCLUDE_GLOBS = {"*.pyc", ".DS_Store"}
+# Skip generated junk under examples/out except kept demo assets (handled by not deleting them)
 
 
 def main() -> None:
