@@ -171,20 +171,19 @@ def _gen_linear(loc: LocationSpec, rng: random.Random, n: int) -> None:
     t = loc.tile
     gy = loc.ground_y
     x = t * 3
+    # Always place a couple of high windows for shafts
+    loc.windows.extend([(loc.width // 3, t * 3), (2 * loc.width // 3, t * 3)])
     for i in range(n):
         w = rng.randint(3, 6) * t
         gap = rng.randint(2, 4) * t
         y = gy - rng.randint(2, 5) * t
-        # Alternate one-way ledges and solids
         rect = Rect(x, y, w, t)
         if i % 2 == 0:
             loc.solids.append(rect)
         else:
             loc.one_way.append(rect)
-        if rng.random() < 0.4:
+        if rng.random() < 0.55:
             loc.lamps.append((x + w // 2, y - t // 2))
-        if rng.random() < 0.35:
-            loc.windows.append((x + w // 2, y - t * 3))
         x += w + gap
         if x > loc.width - t * 4:
             break
@@ -265,30 +264,70 @@ def draw_location_base(sprite, loc: LocationSpec, layer: str = "world") -> None:
     pal = theme_colors(loc.theme)
     stone = pal["stone"]
     bg = pal["bg"]
+    gold = pal["gold"]
 
-    # Sky / void fill
+    # Sky gradient
     for y in range(loc.height):
-        c = bg[0] if y < loc.height // 3 else bg[1]
+        t = y / max(1, loc.height - 1)
+        c = (
+            int(bg[0][0] + (bg[1][0] - bg[0][0]) * t),
+            int(bg[0][1] + (bg[1][1] - bg[0][1]) * t),
+            int(bg[0][2] + (bg[1][2] - bg[0][2]) * t),
+            255,
+        )
         for x in range(loc.width):
             sprite.put_pixel(x, y, c, layer=layer, frame=0)
+
+    # Back wall brick field (between ceiling and ground)
+    wall_top = loc.tile
+    wall_bot = loc.ground_y
+    for y in range(wall_top, wall_bot):
+        for x in range(loc.tile, loc.width - loc.tile):
+            row = (y - wall_top) // 4
+            col = (x + (row % 2) * 4) // 8
+            base = stone[1] if (row + col) % 2 == 0 else stone[0]
+            sprite.put_pixel(x, y, base, layer=layer, frame=0)
+        if (y - wall_top) % 4 == 0:
+            for x in range(loc.tile, loc.width - loc.tile):
+                sprite.put_pixel(x, y, stone[0], layer=layer, frame=0)
+
+    # Windows as lit insets
+    for wx, wy in loc.windows:
+        for dy in range(-10, 12):
+            for dx in range(-6, 7):
+                if dy < -4:
+                    # arch
+                    if dx * dx + (dy + 4) * (dy + 4) > 36:
+                        continue
+                sprite.put_pixel(wx + dx, wy + dy, stone[0], layer=layer, frame=0)
+                if abs(dx) < 5 and -3 <= dy <= 10:
+                    sprite.put_pixel(wx + dx, wy + dy, (60, 90, 130, 255), layer=layer, frame=0)
+        sprite.put_pixel(wx, wy, gold[1], layer=layer, frame=0)
 
     def draw_rect(r: Rect, fill: Color, edge: Color) -> None:
         for y in range(r.y, r.y + r.h):
             for x in range(r.x, r.x + r.w):
                 sprite.put_pixel(x, y, fill, layer=layer, frame=0)
-        # Top edge highlight
         for x in range(r.x, r.x + r.w):
             sprite.put_pixel(x, r.y, edge, layer=layer, frame=0)
+            if r.h > 2:
+                sprite.put_pixel(x, r.y + 1, stone[2], layer=layer, frame=0)
 
     for r in loc.solids:
         draw_rect(r, stone[1], stone[3])
-        # Tile scoring
         for x in range(r.x, r.x + r.w, loc.tile):
             for y in range(r.y, r.y + r.h):
                 sprite.put_pixel(x, y, stone[0], layer=layer, frame=0)
+            # mortar row
+            if r.h >= loc.tile:
+                for xx in range(x, min(x + loc.tile, r.x + r.w)):
+                    sprite.put_pixel(xx, r.y + loc.tile - 1, stone[0], layer=layer, frame=0)
 
     for r in loc.one_way:
         draw_rect(r, stone[2], stone[3])
+        # grass/edge nubs for readability
+        for x in range(r.x, r.x + r.w, 3):
+            sprite.put_pixel(x, r.y - 1, stone[3], layer=layer, frame=0)
 
     for r in loc.hazards:
         for y in range(r.y, min(r.y + r.h, loc.height)):
