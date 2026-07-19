@@ -1,16 +1,15 @@
 #!/usr/bin/env python3
-"""Emberfall Glade — dark fantasy autumn forest platformer stage.
+"""Emberfall Glade — dark fantasy autumn forest (game-ready platformer stage).
 
 Prompt:
-  Canvas 320x176, tile 16. Dark fantasy autumn forest: plum bark, rust/amber
-  foliage, violet mist, warm ember accents. Ascent + creek pit. Canopy god-rays,
-  will-o'-wisps, ember lamps. Drifting leaves, 8-frame pingpong ambient.
+  Soft diffused canopy light, soft violet mist background, foreground fog-clouds.
+  Volumetric creek water, dense autumn leaves with volume. Playable ascent + pit
+  with jump-reachable ledges, collision/tilemap/spawn export.
 """
 
 from __future__ import annotations
 
 import json
-import math
 import random
 import sys
 from pathlib import Path
@@ -19,9 +18,26 @@ SKILL = Path(__file__).resolve().parents[2] / ".cursor" / "skills" / "aseprite-p
 sys.path.insert(0, str(SKILL / "scripts"))
 
 from aseprite_io import Cel, Sprite
-from fx_helpers import flicker, wave_curve
-from lighting_logic import LightingSetup, apply_time_of_day, stamp_lighting
-from location_gen import LocationSpec, Prop, Rect, make_platformer_room, theme_colors
+from atmosphere import (
+    drifting_clouds_frame,
+    falling_leaves_frame,
+    leaf_cluster_pixels,
+    leaf_litter_pixels,
+    soft_bounce_pixels,
+    soft_silhouette_band,
+    soft_sky_pixels,
+    stamp_water,
+)
+from lighting_logic import LightingSetup, apply_time_of_day, stamp_diffused, stamp_lighting
+from location_gen import (
+    LocationSpec,
+    PlatformerPhysics,
+    Prop,
+    Rect,
+    ensure_game_ready,
+    make_platformer_room,
+    theme_colors,
+)
 
 OUT = Path(__file__).resolve().parent
 W, H, TILE = 320, 176, 16
@@ -38,7 +54,8 @@ def fill(s, x0, y0, x1, y1, c, layer, frame=0):
 
 
 def build_layout(seed: int = 19) -> LocationSpec:
-    """Custom Emberfall layout: ground, creek pit, climbing ledges, log bridge."""
+    """Custom Emberfall: reachable ascent, creek pit, log bridge, climb vine."""
+    phys = PlatformerPhysics(tile=TILE, jump_height=52, jump_gap=56, player_w=12, player_h=16)
     loc = make_platformer_room(
         name="emberfall_glade",
         width=W,
@@ -46,103 +63,110 @@ def build_layout(seed: int = 19) -> LocationSpec:
         tile=TILE,
         theme="autumn_forest",
         style="ascent",
-        platforms=0,  # we'll place our own
+        platforms=0,
         seed=seed,
+        game_ready=False,
+        physics=phys,
     )
-    # Clear auto platforms from ascent with platforms=0 — still has floor/walls
-    loc.solids = [r for r in loc.solids if r.y >= loc.ground_y or r.w <= TILE or r.x == 0 or r.x >= W - TILE]
+    # Keep walls/ceiling only
+    loc.solids = [r for r in loc.solids if r.x == 0 or r.x >= W - TILE or r.y == 0]
     loc.one_way.clear()
     loc.hazards.clear()
+    loc.kill_zones.clear()
     loc.props.clear()
     loc.windows.clear()
     loc.lamps.clear()
     loc.exits.clear()
+    loc.climbables.clear()
+    loc.checkpoints.clear()
 
     t, gy = TILE, loc.ground_y
 
-    # Creek pit in the middle
+    # Creek pit — hazard + kill strip at bottom
     pit = Rect(t * 8, gy, t * 5, H - gy)
     loc.hazards.append(pit)
+    loc.kill_zones.append(Rect(pit.x, H - t, pit.w, t))
+
     # Split floor around pit
-    loc.solids = [r for r in loc.solids if not (r.y >= gy and r.x == 0 and r.w == W)]
-    loc.solids.append(Rect(0, 0, W, t))          # canopy ceiling band
-    loc.solids.append(Rect(0, 0, t, H))
-    loc.solids.append(Rect(W - t, 0, t, H))
     loc.solids.append(Rect(t, gy, pit.x - t, H - gy))
     loc.solids.append(Rect(pit.x + pit.w, gy, W - t - (pit.x + pit.w), H - gy))
 
-    # Log bridge over creek (solid)
+    # Log bridge (thin solid, snapped x)
     loc.solids.append(Rect(pit.x - 4, gy - t, pit.w + 8, 6))
 
-    # Climbing moss ledges (mix solid + one-way leaf piles)
+    # Climbing ledges — gaps/rises within jump budget
+    # (x, y, w, solid?)
     ledges = [
         (t * 2, gy - t * 2, t * 3, True),
         (t * 5, gy - t * 3, t * 2, False),
-        (t * 12, gy - t * 2, t * 3, True),
-        (t * 15, gy - t * 4, t * 2, False),
-        (t * 10, gy - t * 5, t * 3, True),
+        (t * 11, gy - t * 2, t * 3, True),
+        (t * 14, gy - t * 4, t * 2, False),
+        (t * 9, gy - t * 5, t * 3, True),
         (t * 4, gy - t * 6, t * 2, False),
-        (t * 13, gy - t * 7, t * 3, True),
+        (t * 12, gy - t * 7, t * 3, True),
         (t * 7, gy - t * 8, t * 2, False),
     ]
     for x, y, w, solid in ledges:
         r = Rect(x, y, w, t // 2 + 2)
         (loc.solids if solid else loc.one_way).append(r)
 
-    # Canopy light gaps (shaft anchors)
     loc.windows = [(70, 28), (160, 22), (240, 30)]
-    # Ember lamps / wisps
     loc.lamps = [(48, gy - 28), (200, gy - 40), (280, gy - 24), (120, gy - t * 5 - 8)]
     loc.props = [
         Prop("torch", 48, gy - 24, {"kind": "ember"}),
         Prop("torch", 200, gy - 36, {"kind": "ember"}),
         Prop("torch", 280, gy - 20, {"kind": "ember"}),
-        Prop("chest", t * 13 + 8, gy - t * 7 - 8, {}),
+        Prop("chest", t * 12 + 8, gy - t * 7, {}),
         Prop("door", W - t * 2, gy - t * 2, {"exit": "east"}),
-        Prop("decor", 90, gy - 8, {"kind": "mushroom"}),
-        Prop("decor", 250, gy - 8, {"kind": "mushroom"}),
-        Prop("decor", 180, gy - t - 4, {"kind": "root"}),
+        Prop("decor", 90, gy - 2, {"kind": "mushroom"}),
+        Prop("decor", 250, gy - 2, {"kind": "mushroom"}),
+        Prop("decor", 180, gy - t - 2, {"kind": "root"}),
+        Prop("checkpoint", t * 2 + 8, gy - t * 2, {}),
     ]
     loc.player_spawn = (t * 2 + 8, gy - t * 2)
-    loc.exits.append({"name": "east", "x": W - t * 2, "y": gy - t * 2, "w": t, "h": t * 2, "target": "next_glade"})
+    loc.checkpoints = [(t * 2 + 8, gy - t * 2), (t * 12 + 8, gy - t * 7)]
+    loc.exits.append({
+        "name": "east", "x": W - t * 2, "y": gy - t * 2,
+        "w": t, "h": t * 2, "target": "next_glade",
+    })
     loc.climbables.append(Rect(t * 6, gy - t * 8, 6, t * 6))
-    return loc
+    return ensure_game_ready(loc, phys)
 
 
-def draw_sky_and_mist(s: Sprite, pal: dict) -> None:
+def draw_soft_background(s: Sprite, pal: dict) -> None:
     bg = pal["bg"]
-    for y in range(H):
-        t = y / H
-        # Violet dusk gradient
-        c = (
-            int(bg[0][0] + (bg[-1][0] - bg[0][0]) * t),
-            int(bg[0][1] + (bg[-1][1] - bg[0][1]) * t),
-            int(bg[0][2] + (bg[-1][2] - bg[0][2]) * t),
-            255,
-        )
-        for x in range(W):
-            put(s, x, y, c, "far")
-    # Distant silhouette treeline
-    bark = pal["stone"]
-    leaf = pal["leaf"]
-    rng = random.Random(3)
-    for i in range(18):
-        tx = 10 + i * 18 + rng.randint(-3, 3)
-        th = rng.randint(28, 50)
-        for y in range(H // 3 - th, H // 3):
-            put(s, tx, y, bark[0], "far")
-            put(s, tx + 1, y, bark[0], "far")
-        # Canopy blob
-        cy = H // 3 - th + 6
-        for dy in range(-10, 8):
-            for dx in range(-12, 13):
-                if dx * dx / 140 + dy * dy / 80 <= 1:
-                    put(s, tx + dx, cy + dy, leaf[i % len(leaf)], "far")
+    haze = pal.get("haze", [(90, 60, 110, 255)])[0]
+    # Brighter open-sky top so diffused light + depth read behind canopy
+    top = (28, 20, 48, 255)
+    bot = bg[-1]
+    sky = soft_sky_pixels(
+        W, H,
+        top=top,
+        bottom=bot,
+        haze=(_clamp_c(haze[0] + 30), _clamp_c(haze[1] + 20), _clamp_c(haze[2] + 25), 255),
+        haze_y=0.38,
+        haze_width=0.45,
+    )
+    s.stamp(sky, layer="far", frame=0)
+    sil = soft_silhouette_band(
+        W, horizon_y=H // 3 + 4,
+        color=(22, 16, 34, 160),
+        height=40, seed=3, blobs=14,
+    )
+    s.stamp(sil, layer="far", frame=0)
+    # Soft mist bands mid-frame (depth cue between far trees and playfield)
+    for y in range(H // 3, H // 2 + 10, 3):
+        for x in range(0, W, 2):
+            a = 28 + (x * 3 + y * 5) % 20
+            put(s, x, y, (60, 45, 85, a), "far")
 
 
-def draw_tree(s: Sprite, cx: int, base_y: int, height: int, pal: dict, lean: int = 0) -> None:
+def _clamp_c(v: int) -> int:
+    return max(0, min(255, v))
+
+
+def draw_tree(s: Sprite, cx: int, base_y: int, height: int, pal: dict, lean: int = 0, seed: int = 0, layer_canopy: str = "mid") -> None:
     bark, leaf, moss = pal["stone"], pal["leaf"], pal["moss"]
-    # Trunk
     for y in range(base_y - height, base_y):
         t = (y - (base_y - height)) / max(1, height)
         half = int(3 + t * 4)
@@ -152,77 +176,49 @@ def draw_tree(s: Sprite, cx: int, base_y: int, height: int, pal: dict, lean: int
             if abs(dx) == half:
                 c = bark[0]
             put(s, cx + dx + xoff, y, c, "world")
-        # Moss patches
         if y % 7 == 0:
             put(s, cx - half + xoff, y, moss[1], "world")
-    # Root flare
     for dx in range(-8, 9):
         put(s, cx + dx, base_y - 1, bark[1], "world")
         if abs(dx) < 6:
             put(s, cx + dx, base_y - 2, bark[2], "world")
-    # Canopy clusters
     top = base_y - height + 4
-    for ox, oy, r, li in ((-6, 0, 11, 0), (8, -4, 12, 1), (0, -10, 10, 2), (-10, -8, 8, 3), (12, 2, 7, 1)):
-        for dy in range(-r, r + 1):
-            for dx in range(-r, r + 1):
-                if dx * dx + dy * dy <= r * r:
-                    # Darker underside
-                    c = leaf[li % len(leaf)] if dy < r // 3 else leaf[(li + 1) % len(leaf)]
-                    if dx * dx + dy * dy > (r - 2) * (r - 2) and dy > 0:
-                        c = leaf[0]
-                    put(s, cx + ox + dx + lean // 2, top + oy + dy, c, "mid")
-
-
-def draw_creek(s: Sprite, pit: Rect, pal: dict) -> None:
-    water = pal["water"]
-    for y in range(pit.y, min(pit.y2 + 1, H)):
-        for x in range(pit.x, pit.x2 + 1):
-            depth = (y - pit.y) / max(1, pit.h)
-            c = water[0] if depth < 0.35 else (water[1] if depth < 0.7 else water[2])
-            put(s, x, y, c, "world")
-            if (x + y) % 5 == 0:
-                put(s, x, y, water[min(2, 1)], "world")
-    # Bank mud
-    bark = pal["stone"]
-    for x in range(pit.x - 3, pit.x):
-        for y in range(pit.y - 2, pit.y + 4):
-            put(s, x, y, bark[1], "world")
-    for x in range(pit.x2 + 1, pit.x2 + 4):
-        for y in range(pit.y - 2, pit.y + 4):
-            put(s, x, y, bark[1], "world")
+    # Volumetric leaf clusters instead of flat ellipses
+    for i, (ox, oy, r) in enumerate(((-6, 0, 11), (8, -4, 12), (0, -10, 10), (-10, -8, 8), (12, 2, 7))):
+        cluster = leaf_cluster_pixels(
+            cx + ox + lean // 2, top + oy, leaf, radius=r, count=14 + r, seed=seed + i * 9,
+        )
+        s.stamp(cluster, layer=layer_canopy, frame=0)
 
 
 def draw_log_bridge(s: Sprite, r: Rect, pal: dict) -> None:
-    bark = pal["stone"]
-    moss = pal["moss"]
+    bark, moss = pal["stone"], pal["moss"]
     for y in range(r.y, r.y + r.h):
         for x in range(r.x, r.x + r.w):
             c = bark[2] if (y - r.y) < 2 else bark[1]
             put(s, x, y, c, "world")
-    # Bark rings
     for x in range(r.x + 2, r.x + r.w, 5):
         put(s, x, r.y + 1, bark[0], "world")
     put(s, r.x + 3, r.y, moss[1], "world")
     put(s, r.x + r.w - 4, r.y, moss[0], "world")
+    # Leaf litter on bridge
+    s.stamp(leaf_litter_pixels(r.x, r.y, r.w, pal["leaf"], density=0.4, seed=r.x), layer="mid", frame=0)
 
 
 def draw_ledge(s: Sprite, r: Rect, pal: dict, leafy: bool) -> None:
-    bark, leaf, moss = pal["stone"], pal["leaf"], pal["moss"]
+    bark, moss = pal["stone"], pal["moss"]
     for y in range(r.y, r.y + r.h):
         for x in range(r.x, r.x + r.w):
             put(s, x, y, bark[2] if y == r.y else bark[1], "world")
     if leafy:
-        for x in range(r.x, r.x + r.w):
-            put(s, x, r.y - 1, leaf[(x // 2) % len(leaf)], "mid")
-            if x % 3 == 0:
-                put(s, x, r.y - 2, leaf[1], "mid")
+        s.stamp(leaf_litter_pixels(r.x, r.y, r.w, pal["leaf"], density=0.75, seed=r.x + r.y), layer="mid", frame=0)
     else:
         for x in range(r.x, r.x + r.w, 4):
             put(s, x, r.y, moss[1], "world")
 
 
 def draw_ground(s: Sprite, loc: LocationSpec, pal: dict) -> None:
-    bark, leaf, moss = pal["stone"], pal["leaf"], pal["moss"]
+    bark = pal["stone"]
     gy = loc.ground_y
     for r in loc.solids:
         if r.y < gy:
@@ -232,19 +228,13 @@ def draw_ground(s: Sprite, loc: LocationSpec, pal: dict) -> None:
                 depth = (y - gy) / max(1, H - gy)
                 c = bark[2] if depth < 0.15 else (bark[1] if depth < 0.5 else bark[0])
                 put(s, x, y, c, "world")
-        # Leaf litter on top
-        for x in range(r.x, r.x + r.w):
-            if (x * 3) % 7 != 0:
-                put(s, x, gy - 1, leaf[x % len(leaf)], "mid")
-            if x % 5 == 0:
-                put(s, x, gy - 2, moss[0], "mid")
+        s.stamp(leaf_litter_pixels(r.x, gy, r.w, pal["leaf"], density=0.65, seed=r.x), layer="mid", frame=0)
 
 
 def draw_props(s: Sprite, loc: LocationSpec, pal: dict) -> None:
-    leaf, gold, accent = pal["leaf"], pal["gold"], pal["accent"]
+    gold, accent = pal["gold"], pal["accent"]
     for p in loc.props:
         if p.kind == "torch" or p.meta.get("kind") == "ember":
-            # Twisted ember lantern on stake
             fill(s, p.x, p.y, p.x + 1, p.y + 6, pal["stone"][1], "props")
             put(s, p.x, p.y - 1, gold[0], "props")
             put(s, p.x + 1, p.y - 1, gold[1], "props")
@@ -255,7 +245,6 @@ def draw_props(s: Sprite, loc: LocationSpec, pal: dict) -> None:
             fill(s, p.x - 4, p.y - 6, p.x + 4, p.y - 3, gold[1], "props")
             put(s, p.x, p.y - 4, accent[1], "props")
         elif p.kind == "door":
-            # Vine-choked arch exit
             fill(s, p.x, p.y, p.x + TILE - 1, p.y + TILE * 2 - 1, pal["stone"][0], "props")
             for y in range(p.y, p.y + TILE * 2):
                 put(s, p.x, y, pal["moss"][1], "props")
@@ -269,30 +258,30 @@ def draw_props(s: Sprite, loc: LocationSpec, pal: dict) -> None:
         elif p.meta.get("kind") == "root":
             for i in range(8):
                 put(s, p.x + i, p.y - i // 3, pal["stone"][1], "props")
+        elif p.kind == "checkpoint":
+            put(s, p.x, p.y - 1, gold[1], "props")
+            put(s, p.x, p.y - 2, accent[2], "props")
 
 
 def draw_canopy_overlay(s: Sprite, pal: dict) -> None:
-    """Overhanging leaves at top of frame."""
     leaf = pal["leaf"]
     rng = random.Random(9)
-    for x in range(0, W, 2):
-        depth = rng.randint(8, 22)
-        for y in range(0, depth):
-            if rng.random() < 0.7:
-                put(s, x, y, leaf[(x + y) % len(leaf)], "near")
-            if y < 4:
-                put(s, x, y, leaf[0], "near")
+    for x in range(0, W, 3):
+        depth = rng.randint(10, 24)
+        cluster = leaf_cluster_pixels(x, depth // 2, leaf, radius=depth // 2 + 2, count=10, seed=9 + x)
+        s.stamp(cluster, layer="near", frame=0)
 
 
 def draw_static_scene(s: Sprite, loc: LocationSpec) -> None:
     pal = theme_colors(loc.theme)
-    draw_sky_and_mist(s, pal)
-    # Background trees
-    for cx, h, lean in ((40, 90, -2), (100, 110, 1), (170, 100, -1), (230, 115, 2), (290, 95, -2)):
-        draw_tree(s, cx, loc.ground_y, h, pal, lean=lean)
+    draw_soft_background(s, pal)
+    # Fewer/taller BG trees so soft sky + mist stay visible between trunks
+    for i, (cx, h, lean) in enumerate(((55, 85, -2), (155, 95, 1), (255, 88, -1))):
+        draw_tree(s, cx, loc.ground_y, h, pal, lean=lean, seed=20 + i, layer_canopy="far")
     draw_ground(s, loc, pal)
     for r in loc.hazards:
-        draw_creek(s, r, pal)
+        stamp_water(s, r.x, r.y, r.w, r.h, pal["water"], frame=0, frames=FRAMES,
+                    body_layer="world", surface_layer="mid", glow_layer="glow")
     for r in loc.solids:
         if r.h <= 8 and r.y < loc.ground_y and r.w > TILE:
             draw_log_bridge(s, r, pal)
@@ -300,55 +289,39 @@ def draw_static_scene(s: Sprite, loc: LocationSpec) -> None:
             draw_ledge(s, r, pal, leafy=False)
     for r in loc.one_way:
         draw_ledge(s, r, pal, leafy=True)
-    # Mid trees framing
-    draw_tree(s, 20, loc.ground_y, 70, pal, lean=3)
-    draw_tree(s, 300, loc.ground_y, 75, pal, lean=-3)
+    # Near-field framing trees (canopy on mid/near)
+    draw_tree(s, 18, loc.ground_y, 72, pal, lean=3, seed=90, layer_canopy="mid")
+    draw_tree(s, 302, loc.ground_y, 78, pal, lean=-3, seed=91, layer_canopy="mid")
     draw_props(s, loc, pal)
     draw_canopy_overlay(s, pal)
+    for r in loc.climbables:
+        for y in range(r.y, r.y + r.h):
+            put(s, r.x, y, pal["moss"][1], "props")
+            if y % 3 == 0:
+                put(s, r.x + 1, y, pal["moss"][0], "props")
 
 
 def make_lighting(loc: LocationSpec) -> LightingSetup:
     setup = LightingSetup(time_of_day="dusk")
     apply_time_of_day(setup)
-    # Cooler violet ambient for dark fantasy
-    setup.ambient = (110, 90, 140)
-    setup.ambient_strength = 0.48
-    # Canopy shafts — warm autumn gold
+    setup.ambient = (120, 100, 145)
+    setup.ambient_strength = 0.36  # softer multiply — diffused carries the mood
     for i, (wx, wy) in enumerate(loc.windows):
         setup.add_shaft(
             wx, wy,
             aim_deg=95 + (i - 1) * 10,
             length=H - wy - 20,
-            cone_deg=26,
-            color=(255, 170, 90),
-            intensity=0.9,
+            cone_deg=38,
+            color=(255, 175, 100),
+            intensity=0.55,  # softer shafts over diffused fill
             flicker_seed=20 + i,
         )
-    # Ember lamps
     for i, (lx, ly) in enumerate(loc.lamps):
-        setup.add_point(lx, ly, color=(255, 140, 60), intensity=1.05, radius=26, flicker_seed=40 + i)
-    # Will-o'-wisps (cool)
-    setup.add_point(150, 70, color=(140, 220, 200), intensity=0.7, radius=18, flicker_seed=77)
-    setup.add_point(210, 100, color=(160, 140, 255), intensity=0.55, radius=14, flicker_seed=88)
+        setup.add_point(lx, ly, color=(255, 140, 60), intensity=1.0, radius=28, flicker_seed=40 + i)
+    setup.add_point(150, 70, color=(140, 220, 200), intensity=0.65, radius=18, flicker_seed=77)
+    setup.add_point(210, 100, color=(160, 140, 255), intensity=0.5, radius=14, flicker_seed=88)
+    setup.add_point(W // 2, loc.ground_y - 2, color=(180, 120, 80), intensity=0.35, radius=W * 0.45, flicker_seed=0)
     return setup
-
-
-def draw_falling_leaves(s: Sprite, frame: int, seed: int = 5) -> None:
-    pal = theme_colors("autumn_forest")
-    leaf = pal["leaf"]
-    rng = random.Random(seed)
-    for i in range(28):
-        base_x = rng.randint(0, W - 1)
-        speed = rng.uniform(0.6, 1.4)
-        sway = rng.uniform(0.4, 1.2)
-        phase = rng.random()
-        y = int((rng.random() * H + frame * 2.2 * speed) % H)
-        x = int(base_x + math.sin((frame / FRAMES + phase) * math.tau) * 6 * sway) % W
-        c = leaf[i % len(leaf)]
-        a = 200 if i % 3 else 140
-        put(s, x, y, (c[0], c[1], c[2], a), "leaves", frame)
-        if i % 4 == 0:
-            put(s, x + 1, y, (c[0], c[1], c[2], a // 2), "leaves", frame)
 
 
 def copy_static(s: Sprite) -> None:
@@ -362,6 +335,53 @@ def copy_static(s: Sprite) -> None:
             layer.cels[fi] = Cel(x=src.x, y=src.y, opacity=src.opacity, pixels=dict(src.pixels))
 
 
+def animate_frame(s: Sprite, loc: LocationSpec, setup: LightingSetup, f: int) -> None:
+    pal = theme_colors(loc.theme)
+    for fx in ("shade", "beams", "glow", "leaves", "clouds_fg"):
+        s.ensure_cel(fx, f).clear()
+
+    # Diffused soft light first
+    stamp_diffused(s, color=(255, 185, 130), strength=0.48, frame=f, open_sky=0.7)
+    stamp_lighting(s, setup, frame=f, stamp_shade=(f == 0))
+    if f > 0:
+        src = s._resolve_layer("shade").cels[0]
+        if src:
+            s._resolve_layer("shade").cels[f] = Cel(
+                x=src.x, y=src.y, opacity=src.opacity, pixels=dict(src.pixels)
+            )
+
+    # Extra soft bounce under lamps
+    for lx, ly in loc.lamps:
+        s.stamp(soft_bounce_pixels(lx, loc.ground_y - 1, 36, (255, 140, 70), 0.25), layer="beams", frame=f)
+
+    # Background soft clouds (stamp into far by blending via clouds on screen? keep on beams soft)
+    bg_clouds = drifting_clouds_frame(
+        W, H, f, FRAMES, layer="bg", seed=11, count=3,
+        color=tuple(pal.get("cloud_bg", [(140, 120, 170, 55)])[0]),
+    )
+    s.stamp(bg_clouds, layer="beams", frame=f)
+
+    # Foreground fog-clouds
+    fg = drifting_clouds_frame(
+        W, H, f, FRAMES, layer="fg", seed=22, count=4,
+        color=tuple(pal.get("cloud_fg", [(30, 22, 40, 70)])[0]),
+    )
+    s.stamp(fg, layer="clouds_fg", frame=f)
+
+    # Volumetric water caustics / surface animation
+    for r in loc.hazards:
+        # Clear mid water surface strip then restamp animated water (body already in world)
+        stamp_water(
+            s, r.x, r.y, r.w, r.h, pal["water"], frame=f, frames=FRAMES,
+            body_layer="world", surface_layer="mid", glow_layer="glow",
+        )
+
+    # Falling volumetric leaves
+    leaves = falling_leaves_frame(W, H, f, FRAMES, colors=pal["leaf"], count=36, seed=5)
+    s.stamp(leaves, layer="leaves", frame=f)
+    s.set_frame_duration(f, 130)
+
+
 def build() -> tuple[Sprite, LocationSpec]:
     loc = build_layout(19)
     s = Sprite(W, H)
@@ -370,30 +390,20 @@ def build() -> tuple[Sprite, LocationSpec]:
     s.add_layer("mid")
     s.add_layer("props")
     s.add_layer("near")
-    s.add_layer("shade", blend_mode="multiply", opacity=110)
+    s.add_layer("shade", blend_mode="multiply", opacity=105)
     s.add_layer("beams", blend_mode="screen")
     s.add_layer("glow", blend_mode="addition")
     s.add_layer("leaves", blend_mode="normal")
+    s.add_layer("clouds_fg", blend_mode="normal", opacity=180)
 
     for _ in range(1, FRAMES):
         s.add_frame(130)
 
     draw_static_scene(s, loc)
     copy_static(s)
-
     setup = make_lighting(loc)
     for f in range(FRAMES):
-        for fx in ("shade", "beams", "glow", "leaves"):
-            s.ensure_cel(fx, f).clear()
-        stamp_lighting(s, setup, frame=f, stamp_shade=(f == 0))
-        if f > 0:
-            src = s._resolve_layer("shade").cels[0]
-            if src:
-                s._resolve_layer("shade").cels[f] = Cel(
-                    x=src.x, y=src.y, opacity=src.opacity, pixels=dict(src.pixels)
-                )
-        draw_falling_leaves(s, f)
-        s.set_frame_duration(f, 130)
+        animate_frame(s, loc, setup, f)
 
     s.add_tag("ambient", 0, FRAMES - 1, direction="pingpong")
     return s, loc
@@ -405,21 +415,14 @@ def main() -> None:
     png = s.preview(OUT / "emberfall_glade.png", scale=2, frame=0, background=(8, 6, 14, 255))
     order = list(range(FRAMES)) + list(range(FRAMES - 2, 0, -1))
     gif = s.preview_gif(OUT / "emberfall_glade.gif", scale=2, background=(8, 6, 14, 255), frames=order)
-    coll = {
-        "name": loc.name,
-        "theme": loc.theme,
-        "spawn": loc.player_spawn,
-        "exits": loc.exits,
-        "collision": loc.collision_map(),
-        "lamps": loc.lamps,
-        "windows": loc.windows,
-    }
-    (OUT / "emberfall_glade_collision.json").write_text(json.dumps(coll, indent=2))
+    game = loc.export_game()
+    (OUT / "emberfall_glade_collision.json").write_text(json.dumps(game, indent=2))
     print(f"saved {ase}")
     print(f"saved {png}")
     print(f"saved {gif}")
     print(f"solids={len(loc.solids)} one_way={len(loc.one_way)} hazards={len(loc.hazards)}")
-    print(f"windows={loc.windows} lamps={len(loc.lamps)}")
+    print(f"validation={game['validation']}")
+    print(f"tilemap {game['tilemap']['cols']}x{game['tilemap']['rows']}")
 
 
 if __name__ == "__main__":

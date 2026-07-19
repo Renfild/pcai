@@ -1,7 +1,8 @@
-"""Platformer location generation — rooms, platforms, tiles, parallax.
+"""Platformer location generation — rooms, platforms, tiles, game export.
 
-Produces a LocationSpec you draw into a Sprite. Includes collision AABB hints
-for engine export (not drawn — metadata only).
+Produces a LocationSpec you draw into a Sprite. Includes collision AABB hints,
+tilemap export, spawn validation, and jump-reachability checks for game-ready
+stages (not just art demos).
 """
 
 from __future__ import annotations
@@ -31,13 +32,36 @@ class Rect:
     def as_aabb(self) -> Dict[str, int]:
         return {"x": self.x, "y": self.y, "w": self.w, "h": self.h}
 
+    def snap(self, tile: int) -> "Rect":
+        """Snap origin and size to tile grid (size at least 1 tile when possible)."""
+        x = (self.x // tile) * tile
+        y = (self.y // tile) * tile
+        w = max(tile, ((self.w + tile - 1) // tile) * tile) if self.w >= tile // 2 else self.w
+        h = self.h if self.h < tile else max(tile, ((self.h + tile - 1) // tile) * tile)
+        return Rect(x, y, w, h)
+
 
 @dataclass
 class Prop:
-    kind: str  # torch | banner | door | chest | spike | ladder | decor
+    kind: str  # torch | banner | door | chest | spike | ladder | decor | checkpoint
     x: int
     y: int
     meta: Dict = field(default_factory=dict)
+
+
+@dataclass
+class PlatformerPhysics:
+    """Assumptions used to validate / generate reachable layouts."""
+
+    tile: int = 16
+    player_w: int = 12
+    player_h: int = 16
+    # Max jump peak (pixels up from standing feet)
+    jump_height: int = 48
+    # Max horizontal gap clearable at run+jump
+    jump_gap: int = 64
+    # Coyote / feel padding when checking gaps
+    gap_slack: int = 8
 
 
 @dataclass
@@ -48,14 +72,16 @@ class LocationSpec:
     width: int
     height: int
     tile: int = 16
-    theme: str = "castle"  # castle | cave | forest | dungeon | rooftop
+    theme: str = "castle"  # castle | cave | forest | autumn_forest | dungeon | rooftop
     # Geometry
     solids: List[Rect] = field(default_factory=list)       # collision platforms
     one_way: List[Rect] = field(default_factory=list)      # jump-through
     hazards: List[Rect] = field(default_factory=list)
     climbables: List[Rect] = field(default_factory=list)
+    kill_zones: List[Rect] = field(default_factory=list)   # instant death (void/lava)
+    checkpoints: List[Tuple[int, int]] = field(default_factory=list)
     # Spawns
-    player_spawn: Tuple[int, int] = (32, 64)
+    player_spawn: Tuple[int, int] = (32, 64)  # feet position (bottom-center)
     exits: List[Dict] = field(default_factory=list)        # {name,x,y,w,h,target}
     # Decor
     props: List[Prop] = field(default_factory=list)
@@ -65,6 +91,8 @@ class LocationSpec:
     parallax: List[Dict] = field(default_factory=list)
     ground_y: int = 0
     seed: int = 0
+    camera: Dict = field(default_factory=dict)  # {x,y,w,h} bounds
+    physics: Optional[PlatformerPhysics] = None
 
     def collision_map(self) -> List[Dict]:
         out = []
@@ -76,7 +104,71 @@ class LocationSpec:
             out.append({"type": "hazard", **r.as_aabb()})
         for r in self.climbables:
             out.append({"type": "climb", **r.as_aabb()})
+        for r in self.kill_zones:
+            out.append({"type": "kill", **r.as_aabb()})
         return out
+
+    def snap_all(self) -> None:
+        """Snap gameplay geometry to tile grid (keeps thin one-ways as-is if short)."""
+        t = self.tile
+        self.solids = [r.snap(t) if r.h >= t // 2 else Rect((r.x // t) * t, r.y, max(t, (r.w // t) * t), r.h) for r in self.solids]
+        self.one_way = [Rect((r.x // t) * t, r.y, max(t, ((r.w + t - 1) // t) * t), r.h) for r in self.one_way]
+        self.hazards = [r.snap(t) for r in self.hazards]
+        self.climbables = [r.snap(t) for r in self.climbables]
+        self.kill_zones = [r.snap(t) for r in self.kill_zones]
+        sx, sy = self.player_spawn
+        # Feet on tile; keep sub-tile x for feel but prefer tile center
+        self.player_spawn = (sx, (sy // t) * t)
+
+    def dedupe_solids(self) -> None:
+        seen = set()
+        uniq = []
+        for r in self.solids:
+            key = (r.x, r.y, r.w, r.h)
+            if key in seen:
+                continue
+            seen.add(key)
+            uniq.append(r)
+        self.solids = uniq
+
+    def export_game(self) -> Dict:
+        """Engine-ready JSON: collision, spawn, camera, tile size, tags."""
+        phys = self.physics or PlatformerPhysics(tile=self.tile)
+        cam = self.camera or {
+            "x": 0, "y": 0, "w": self.width, "h": self.height,
+        }
+        return {
+            "name": self.name,
+            "theme": self.theme,
+            "width": self.width,
+            "height": self.height,
+            "tile": self.tile,
+            "ground_y": self.ground_y,
+            "spawn": {
+                "x": self.player_spawn[0],
+                "y": self.player_spawn[1],
+                "feet": True,
+                "player_w": phys.player_w,
+                "player_h": phys.player_h,
+            },
+            "checkpoints": [{"x": x, "y": y} for x, y in self.checkpoints],
+            "exits": list(self.exits),
+            "camera": cam,
+            "physics": {
+                "jump_height": phys.jump_height,
+                "jump_gap": phys.jump_gap,
+                "tile": phys.tile,
+            },
+            "parallax": list(self.parallax),
+            "lamps": [{"x": x, "y": y} for x, y in self.lamps],
+            "windows": [{"x": x, "y": y} for x, y in self.windows],
+            "props": [
+                {"kind": p.kind, "x": p.x, "y": p.y, **p.meta} for p in self.props
+            ],
+            "collision": self.collision_map(),
+            "tilemap": build_tilemap(self),
+            "validation": validate_layout(self, phys),
+        }
 
 
 # Theme palettes (compact)
@@ -98,6 +190,8 @@ THEMES: Dict[str, Dict[str, List[Color]]] = {
         "accent": [(160, 60, 40, 255), (220, 120, 60, 255)],
         "gold": [(200, 170, 70, 255), (240, 210, 100, 255)],
         "bg": [(30, 40, 50, 255), (50, 70, 60, 255)],
+        "leaf": [(60, 100, 50, 255), (90, 140, 60, 255), (130, 170, 80, 255)],
+        "water": [(20, 40, 50, 255), (30, 70, 80, 255), (50, 110, 120, 255)],
     },
     "autumn_forest": {
         # Dark fantasy autumn — plum bark, rust foliage, violet mist
@@ -108,6 +202,9 @@ THEMES: Dict[str, Dict[str, List[Color]]] = {
         "leaf": [(140, 40, 36, 255), (190, 70, 40, 255), (220, 130, 50, 255), (180, 90, 30, 255)],
         "moss": [(40, 70, 48, 255), (70, 110, 60, 255)],
         "water": [(20, 28, 48, 255), (36, 50, 80, 255), (60, 90, 120, 255)],
+        "cloud_bg": [(140, 120, 170, 60)],
+        "cloud_fg": [(30, 22, 40, 75)],
+        "haze": [(70, 50, 90, 255)],
     },
     "dungeon": {
         "stone": [(34, 34, 40, 255), (56, 56, 64, 255), (88, 88, 98, 255), (130, 130, 142, 255)],
@@ -120,12 +217,151 @@ THEMES: Dict[str, Dict[str, List[Color]]] = {
         "accent": [(200, 80, 60, 255), (240, 140, 80, 255)],
         "gold": [(220, 180, 80, 255), (250, 220, 120, 255)],
         "bg": [(40, 50, 80, 255), (70, 90, 130, 255)],
+        "cloud_bg": [(160, 170, 200, 55)],
+        "cloud_fg": [(50, 55, 70, 70)],
     },
 }
 
 
 def theme_colors(theme: str) -> Dict[str, List[Color]]:
     return THEMES.get(theme, THEMES["castle"])
+
+
+# ---------------------------------------------------------------------------
+# Game-ready helpers
+# ---------------------------------------------------------------------------
+
+def build_tilemap(loc: LocationSpec) -> Dict:
+    """Coarse tile grid for engines: 0 empty, 1 solid, 2 one_way, 3 hazard, 4 climb, 5 kill."""
+    t = loc.tile
+    cols = loc.width // t
+    rows = loc.height // t
+    grid = [[0 for _ in range(cols)] for _ in range(rows)]
+
+    def paint(rects: Sequence[Rect], code: int, full: bool = True) -> None:
+        for r in rects:
+            c0 = max(0, r.x // t)
+            r0 = max(0, r.y // t)
+            c1 = min(cols, (r.x + r.w + t - 1) // t)
+            r1 = min(rows, (r.y + r.h + t - 1) // t) if full else min(rows, r0 + 1)
+            for ry in range(r0, r1):
+                for cx in range(c0, c1):
+                    if grid[ry][cx] == 0 or code in (3, 5):
+                        grid[ry][cx] = code
+
+    paint(loc.solids, 1, full=True)
+    paint(loc.one_way, 2, full=False)  # one-way = top row only
+    paint(loc.hazards, 3, full=True)
+    paint(loc.climbables, 4, full=True)
+    paint(loc.kill_zones, 5, full=True)
+    return {
+        "tile": t,
+        "cols": cols,
+        "rows": rows,
+        "codes": {"empty": 0, "solid": 1, "one_way": 2, "hazard": 3, "climb": 4, "kill": 5},
+        "grid": grid,
+    }
+
+
+def _platform_tops(loc: LocationSpec) -> List[Tuple[int, int, int]]:
+    """List of (x, y, w) standable tops from solids + one_ways (not walls/ceiling)."""
+    tops = []
+    for r in loc.solids + loc.one_way:
+        if r.h >= loc.height - loc.tile:  # full-height wall
+            continue
+        if r.y <= loc.tile and r.h <= loc.tile and r.w >= loc.width - loc.tile * 2:
+            continue  # ceiling
+        if r.w < loc.tile // 2:
+            continue
+        tops.append((r.x, r.y, r.w))
+    return tops
+
+
+def validate_layout(loc: LocationSpec, phys: Optional[PlatformerPhysics] = None) -> Dict:
+    """Check spawn clearance and rough jump reachability. Returns {ok, warnings, gaps}."""
+    phys = phys or loc.physics or PlatformerPhysics(tile=loc.tile)
+    warnings: List[str] = []
+    sx, sy = loc.player_spawn
+    # Spawn must sit on or just above a platform
+    tops = _platform_tops(loc)
+    on_ground = False
+    for px, py, pw in tops:
+        if px <= sx <= px + pw and abs(sy - py) <= 2:
+            on_ground = True
+            break
+        if px <= sx <= px + pw and py - phys.player_h <= sy <= py:
+            on_ground = True
+            break
+    if not on_ground:
+        warnings.append(f"spawn ({sx},{sy}) may not rest on a platform top")
+
+    # Body clearance above spawn
+    for r in loc.solids:
+        if r.x <= sx <= r.x2 and r.y < sy and r.y2 > sy - phys.player_h:
+            if r.y > loc.tile:  # ignore ceiling band
+                warnings.append("spawn body overlaps a solid")
+                break
+
+    # Gap analysis between sorted tops by x
+    sorted_tops = sorted(tops, key=lambda t: (t[0], t[1]))
+    hard_gaps = []
+    for i in range(len(sorted_tops) - 1):
+        ax, ay, aw = sorted_tops[i]
+        bx, by, bw = sorted_tops[i + 1]
+        gap = bx - (ax + aw)
+        rise = ay - by  # positive = next is higher
+        if gap <= 0:
+            continue
+        max_gap = phys.jump_gap + phys.gap_slack
+        max_rise = phys.jump_height
+        if gap > max_gap or rise > max_rise:
+            hard_gaps.append({"from": [ax, ay], "to": [bx, by], "gap": gap, "rise": rise})
+            warnings.append(f"hard jump gap={gap}px rise={rise}px near x={ax}")
+
+    return {
+        "ok": len(warnings) == 0,
+        "warnings": warnings,
+        "hard_gaps": hard_gaps,
+        "platform_count": len(tops),
+    }
+
+
+def ensure_game_ready(loc: LocationSpec, phys: Optional[PlatformerPhysics] = None) -> LocationSpec:
+    """Snap, dedupe, set camera/physics, place default checkpoint, validate spawn."""
+    phys = phys or PlatformerPhysics(tile=loc.tile)
+    loc.physics = phys
+    loc.snap_all()
+    loc.dedupe_solids()
+    loc.camera = loc.camera or {"x": 0, "y": 0, "w": loc.width, "h": loc.height}
+    if not loc.checkpoints:
+        loc.checkpoints.append(tuple(loc.player_spawn))  # type: ignore
+    # Ensure kill zone under hazards that are pits
+    for h in loc.hazards:
+        if h.y >= loc.ground_y - loc.tile and h.h >= loc.tile:
+            # pit floor kill already covered by hazard; add void below if open
+            pass
+    # Nudge spawn onto nearest platform top if floating
+    tops = _platform_tops(loc)
+    sx, sy = loc.player_spawn
+    best = None
+    best_d = 1e9
+    for px, py, pw in tops:
+        if px - 4 <= sx <= px + pw + 4:
+            d = abs(sy - py)
+            if d < best_d:
+                best_d = d
+                best = (max(px + loc.tile // 2, min(sx, px + pw - loc.tile // 2)), py)
+    if best and best_d > 2:
+        loc.player_spawn = best  # type: ignore
+    if not loc.parallax:
+        loc.parallax = [
+            {"name": "sky", "scroll": 0.0, "z": 0},
+            {"name": "far", "scroll": 0.2, "z": 1},
+            {"name": "mid", "scroll": 0.55, "z": 2},
+            {"name": "world", "scroll": 1.0, "z": 3},
+            {"name": "near", "scroll": 1.25, "z": 4},
+        ]
+    return loc
 
 
 def make_platformer_room(
@@ -137,14 +373,18 @@ def make_platformer_room(
     seed: int = 1,
     platforms: int = 5,
     style: str = "linear",  # linear | ascent | arena | pit
+    game_ready: bool = True,
+    physics: Optional[PlatformerPhysics] = None,
 ) -> LocationSpec:
     """Generate a playable side-view room layout."""
     rng = random.Random(seed)
+    phys = physics or PlatformerPhysics(tile=tile)
     ground_y = height - tile * 2
     loc = LocationSpec(
         name=name, width=width, height=height, tile=tile,
         theme=theme, ground_y=ground_y, seed=seed,
-        player_spawn=(tile * 2, ground_y - tile * 2),
+        player_spawn=(tile * 2 + tile // 2, ground_y),
+        physics=phys,
     )
 
     # Floor + ceiling bounds
@@ -153,116 +393,138 @@ def make_platformer_room(
     loc.solids.append(Rect(0, 0, tile, height))  # left wall
     loc.solids.append(Rect(width - tile, 0, tile, height))  # right wall
 
-    # Parallax suggestions
     loc.parallax = [
         {"name": "sky", "scroll": 0.0, "z": 0},
-        {"name": "far", "scroll": 0.25, "z": 1},
-        {"name": "mid", "scroll": 0.5, "z": 2},
-        {"name": "near", "scroll": 1.0, "z": 3},
+        {"name": "far", "scroll": 0.2, "z": 1},
+        {"name": "mid", "scroll": 0.55, "z": 2},
+        {"name": "world", "scroll": 1.0, "z": 3},
+        {"name": "near", "scroll": 1.25, "z": 4},
     ]
 
     if style == "linear":
-        _gen_linear(loc, rng, platforms)
+        _gen_linear(loc, rng, platforms, phys)
     elif style == "ascent":
-        _gen_ascent(loc, rng, platforms)
+        _gen_ascent(loc, rng, platforms, phys)
     elif style == "arena":
         _gen_arena(loc, rng)
     elif style == "pit":
-        _gen_pit(loc, rng, platforms)
+        _gen_pit(loc, rng, platforms, phys)
     else:
-        _gen_linear(loc, rng, platforms)
+        _gen_linear(loc, rng, platforms, phys)
 
-    # Props + lights from theme
     _scatter_props(loc, rng)
+    if game_ready:
+        ensure_game_ready(loc, phys)
     return loc
 
 
-def _gen_linear(loc: LocationSpec, rng: random.Random, n: int) -> None:
+def _gen_linear(loc: LocationSpec, rng: random.Random, n: int, phys: PlatformerPhysics) -> None:
     t = loc.tile
     gy = loc.ground_y
     x = t * 3
-    # Always place a couple of high windows for shafts
+    max_gap = max(t * 2, min(phys.jump_gap - phys.gap_slack, t * 3))
+    max_rise = min(phys.jump_height - t, t * 3)
     loc.windows.extend([(loc.width // 3, t * 3), (2 * loc.width // 3, t * 3)])
+    prev_y = gy
     for i in range(n):
         w = rng.randint(3, 6) * t
-        gap = rng.randint(2, 4) * t
-        y = gy - rng.randint(2, 5) * t
+        gap = rng.randint(t * 2, max_gap)
+        rise = rng.randint(t, max_rise)
+        y = prev_y - rise
+        y = max(t * 3, min(gy - t, y))
+        # Snap
+        x = (x // t) * t
+        y = (y // t) * t
         rect = Rect(x, y, w, t)
         if i % 2 == 0:
             loc.solids.append(rect)
         else:
-            loc.one_way.append(rect)
+            loc.one_way.append(Rect(x, y, w, max(4, t // 2)))
         if rng.random() < 0.55:
             loc.lamps.append((x + w // 2, y - t // 2))
+        prev_y = y
         x += w + gap
         if x > loc.width - t * 4:
             break
-    loc.exits.append({"name": "right", "x": loc.width - t * 2, "y": gy - t * 2, "w": t, "h": t * 2, "target": "next"})
+    loc.exits.append({
+        "name": "right", "x": loc.width - t * 2, "y": gy - t * 2,
+        "w": t, "h": t * 2, "target": "next",
+    })
 
 
-def _gen_ascent(loc: LocationSpec, rng: random.Random, n: int) -> None:
+def _gen_ascent(loc: LocationSpec, rng: random.Random, n: int, phys: PlatformerPhysics) -> None:
     t = loc.tile
     gy = loc.ground_y
     x = t * 2
     y = gy - t * 2
+    max_step_x = max(t * 2, min(phys.jump_gap - t, t * 3))
+    max_step_y = min(phys.jump_height - t, t * 2)
     for i in range(n):
         w = rng.randint(2, 4) * t
         loc.solids.append(Rect(x, y, w, t))
         if rng.random() < 0.5:
             loc.lamps.append((x + w // 2, y - 6))
-        x += rng.randint(2, 4) * t
-        y -= rng.randint(2, 3) * t
+        x += rng.randint(t * 2, max_step_x)
+        y -= rng.randint(t, max_step_y)
         if x > loc.width - t * 3:
             x = t * 2 + (i % 3) * t
         if y < t * 3:
             break
-    loc.exits.append({"name": "top", "x": loc.width // 2, "y": t, "w": t * 2, "h": t, "target": "above"})
+    loc.exits.append({
+        "name": "top", "x": loc.width // 2, "y": t, "w": t * 2, "h": t, "target": "above",
+    })
 
 
 def _gen_arena(loc: LocationSpec, rng: random.Random) -> None:
     t = loc.tile
     gy = loc.ground_y
-    # Side platforms
-    loc.one_way.append(Rect(t * 3, gy - t * 3, t * 3, t))
-    loc.one_way.append(Rect(loc.width - t * 6, gy - t * 3, t * 3, t))
+    loc.one_way.append(Rect(t * 3, gy - t * 3, t * 3, t // 2))
+    loc.one_way.append(Rect(loc.width - t * 6, gy - t * 3, t * 3, t // 2))
     loc.solids.append(Rect(loc.width // 2 - t * 2, gy - t * 5, t * 4, t))
     loc.lamps.append((loc.width // 2, gy - t * 6))
     loc.windows.append((loc.width // 2, t * 3))
 
 
-def _gen_pit(loc: LocationSpec, rng: random.Random, n: int) -> None:
+def _gen_pit(loc: LocationSpec, rng: random.Random, n: int, phys: PlatformerPhysics) -> None:
     t = loc.tile
     gy = loc.ground_y
-    # Gap in floor — mark hazard in the pit
     pit_x = loc.width // 2 - t * 2
-    # Remove center floor by adding hazard over it conceptually
-    loc.hazards.append(Rect(pit_x, gy, t * 4, loc.height - gy))
-    # Floating platforms over pit
-    for i in range(max(2, n // 2)):
-        loc.one_way.append(Rect(pit_x - t + i * t * 2, gy - t * (2 + i), t * 2, t))
+    pit_w = t * 4
+    # Remove full floor; rebuild sides
+    loc.solids = [r for r in loc.solids if not (r.y >= gy and r.x == 0 and r.w == loc.width)]
     loc.solids.append(Rect(t, gy, pit_x - t, loc.height - gy))
-    loc.solids.append(Rect(pit_x + t * 4, gy, loc.width - (pit_x + t * 4) - t, loc.height - gy))
+    loc.solids.append(Rect(pit_x + pit_w, gy, loc.width - (pit_x + pit_w) - t, loc.height - gy))
+    loc.hazards.append(Rect(pit_x, gy, pit_w, loc.height - gy))
+    loc.kill_zones.append(Rect(pit_x, loc.height - t, pit_w, t))
+    # Stepping stones — gaps within jump range
+    step_w = t * 2
+    gap = min(phys.jump_gap - phys.gap_slack, t * 2)
+    x = pit_x - t
+    for i in range(max(2, n // 2)):
+        y = gy - t * (2 + i)
+        loc.one_way.append(Rect(x, y, step_w, max(4, t // 2)))
+        x += step_w + gap
+        if x > pit_x + pit_w:
+            break
 
 
 def _scatter_props(loc: LocationSpec, rng: random.Random) -> None:
     t = loc.tile
     gy = loc.ground_y
-    # Torches along walls
     for x in range(t * 2, loc.width - t * 2, t * 5):
         if rng.random() < 0.55:
             loc.props.append(Prop("torch", x, gy - t * 3))
             loc.lamps.append((x, gy - t * 3 - 4))
-    # Banners
     if loc.theme in ("castle", "dungeon"):
         for x in (t * 4, loc.width // 2, loc.width - t * 5):
             loc.props.append(Prop("banner", x, t * 2, {"color": "accent"}))
-    # Door at exit
     for ex in loc.exits:
         loc.props.append(Prop("door", ex["x"], ex["y"], {"exit": ex["name"]}))
-    # Occasional chest on a solid
     if loc.solids:
-        plat = rng.choice([r for r in loc.solids if r.y < gy] or loc.solids)
-        loc.props.append(Prop("chest", plat.x + plat.w // 2, plat.y - t, {}))
+        candidates = [r for r in loc.solids if r.y < gy and r.w >= t * 2 and r.h <= t * 2]
+        if candidates:
+            plat = rng.choice(candidates)
+            loc.props.append(Prop("chest", plat.x + plat.w // 2, plat.y, {}))
 
 
 # ---------------------------------------------------------------------------
@@ -280,9 +542,9 @@ def draw_location_base(sprite, loc: LocationSpec, layer: str = "world") -> None:
     for y in range(loc.height):
         t = y / max(1, loc.height - 1)
         c = (
-            int(bg[0][0] + (bg[1][0] - bg[0][0]) * t),
-            int(bg[0][1] + (bg[1][1] - bg[0][1]) * t),
-            int(bg[0][2] + (bg[1][2] - bg[0][2]) * t),
+            int(bg[0][0] + (bg[min(1, len(bg) - 1)][0] - bg[0][0]) * t),
+            int(bg[0][1] + (bg[min(1, len(bg) - 1)][1] - bg[0][1]) * t),
+            int(bg[0][2] + (bg[min(1, len(bg) - 1)][2] - bg[0][2]) * t),
             255,
         )
         for x in range(loc.width):
@@ -306,7 +568,6 @@ def draw_location_base(sprite, loc: LocationSpec, layer: str = "world") -> None:
         for dy in range(-10, 12):
             for dx in range(-6, 7):
                 if dy < -4:
-                    # arch
                     if dx * dx + (dy + 4) * (dy + 4) > 36:
                         continue
                 sprite.put_pixel(wx + dx, wy + dy, stone[0], layer=layer, frame=0)
@@ -328,14 +589,12 @@ def draw_location_base(sprite, loc: LocationSpec, layer: str = "world") -> None:
         for x in range(r.x, r.x + r.w, loc.tile):
             for y in range(r.y, r.y + r.h):
                 sprite.put_pixel(x, y, stone[0], layer=layer, frame=0)
-            # mortar row
             if r.h >= loc.tile:
                 for xx in range(x, min(x + loc.tile, r.x + r.w)):
                     sprite.put_pixel(xx, r.y + loc.tile - 1, stone[0], layer=layer, frame=0)
 
     for r in loc.one_way:
         draw_rect(r, stone[2], stone[3])
-        # grass/edge nubs for readability
         for x in range(r.x, r.x + r.w, 3):
             sprite.put_pixel(x, r.y - 1, stone[3], layer=layer, frame=0)
 
@@ -376,8 +635,10 @@ def build_platformer_stage(
     if loc is None:
         loc = make_platformer_room(**loc_kwargs)
     s = sprite_cls(loc.width, loc.height)
+    s.add_layer("far")
     s.add_layer("world")
     s.add_layer("props")
+    s.add_layer("near")
     s.add_layer("shade", blend_mode="multiply", opacity=100)
     s.add_layer("beams", blend_mode="screen")
     s.add_layer("glow", blend_mode="addition")

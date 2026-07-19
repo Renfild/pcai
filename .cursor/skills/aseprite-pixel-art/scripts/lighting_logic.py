@@ -268,6 +268,48 @@ def stamp_lighting(sprite, setup: LightingSetup, frame: int = 0,
     sprite.stamp(layers["glow"], layer=glow_layer, frame=frame)
 
 
+def diffused_ambient_pixels(
+    width: int,
+    height: int,
+    color: Tuple[int, int, int] = (255, 200, 150),
+    strength: float = 0.4,
+    open_sky: float = 0.55,
+) -> List[Pixel]:
+    """Soft hemispheric diffused light (screen). Prefer over hard shafts alone.
+
+    open_sky: how much the top of the frame is brighter (canopy gaps / sky).
+    """
+    cr, cg, cb = color
+    pixels: List[Pixel] = []
+    for y in range(height):
+        ty = 1.0 - y / max(1, height - 1)
+        band = ty ** 1.2
+        for x in range(width):
+            # Soft center lift + edge falloff
+            vx = 1.0 - abs(x - width / 2) / (width / 2)
+            v = strength * (open_sky * band + 0.25 * vx * band)
+            a = _clamp(100 * v)
+            if a > 2:
+                pixels.append((x, y, (cr, cg, cb, a)))
+    return pixels
+
+
+def stamp_diffused(
+    sprite,
+    color: Tuple[int, int, int] = (255, 200, 150),
+    strength: float = 0.4,
+    frame: int = 0,
+    beams_layer: str = "beams",
+    open_sky: float = 0.55,
+) -> None:
+    """Stamp diffused fill onto screen/beams layer."""
+    sprite.stamp(
+        diffused_ambient_pixels(sprite.width, sprite.height, color, strength, open_sky),
+        layer=beams_layer,
+        frame=frame,
+    )
+
+
 def platformer_default_lights(
     width: int,
     height: int,
@@ -275,20 +317,31 @@ def platformer_default_lights(
     time: str = "dusk",
     windows: Optional[Sequence[Tuple[int, int]]] = None,
     lamps: Optional[Sequence[Tuple[int, int]]] = None,
+    diffused: bool = True,
 ) -> LightingSetup:
-    """Opinionated lighting kit for a side-view platformer stage."""
+    """Opinionated lighting kit for a side-view platformer stage.
+
+    When diffused=True, shafts are softer (wider cone, lower intensity) and a
+    ground bounce fill is added — pair with stamp_diffused() for soft BG light.
+    """
     setup = LightingSetup(time_of_day=time)
     apply_time_of_day(setup)
+    shaft_i = 0.7 if diffused else 0.95
+    cone = 34 if diffused else 28
     if windows:
         for i, (wx, wy) in enumerate(windows):
             setup.add_shaft(
                 wx, wy, aim_deg=95 + (i - 1) * 8, length=height - wy - 8,
-                cone_deg=28, color=(255, 220, 150), intensity=0.95,
+                cone_deg=cone, color=(255, 220, 150), intensity=shaft_i,
                 flicker_seed=10 + i,
             )
     if lamps:
         for i, (lx, ly) in enumerate(lamps):
             setup.add_point(lx, ly, color=(255, 170, 80), intensity=1.0, radius=28, flicker_seed=50 + i)
     # Subtle ground bounce fill
-    setup.add_point(width // 2, ground_y - 4, color=(180, 160, 140), intensity=0.25, radius=width * 0.4, flicker_seed=0)
+    bounce_i = 0.35 if diffused else 0.25
+    setup.add_point(
+        width // 2, ground_y - 4, color=(180, 160, 140),
+        intensity=bounce_i, radius=width * 0.45, flicker_seed=0,
+    )
     return setup
