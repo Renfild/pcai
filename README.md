@@ -27,9 +27,15 @@ cp .env.example .env
 streamlit run src/app.py
 ```
 
+### Дополнительно: автономный запуск идеи для роста
+```bash
+streamlit run src/market_launchpad.py
+```
+
 ## Архитектура
 - `src/document_loader.py` - загрузка и предобработка документов
 - `src/chunker.py` - разбиение на чанки с учетом структуры ГОСТ
 - `src/vector_store.py` - векторное хранилище на базе ChromaDB
 - `src/rag_engine.py` - движок RAG с поддержкой цитирования
 - `src/app.py` - веб-интерфейс на Streamlit
+- `src/market_launchpad.py` - автономный анализ ниши и 30-дневный план запуска MVP
