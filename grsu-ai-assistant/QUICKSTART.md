@@ -32,6 +32,12 @@ streamlit run src/app.py
 streamlit run src/market_launchpad.py
 ```
 
+Инструмент выдаёт:
+- рейтинг ниш с объяснимыми оценками,
+- 30-дневный roadmap,
+- sprint на первые 48 часов,
+- файл `launch_brief.md` для скачивания.
+
 ## Загрузка документов
 
 1. В интерфейсе нажмите "Upload Documents"

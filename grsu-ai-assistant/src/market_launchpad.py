@@ -3,7 +3,8 @@ Streamlit-инструмент для автономного выбора рын
 """
 
 from dataclasses import dataclass
-from typing import Dict, List, Tuple
+from datetime import datetime
+from typing import Dict, List
 
 import streamlit as st
 
@@ -17,6 +18,13 @@ class Niche:
     channels: List[str]
     monetization: str
     scores: Dict[str, int]
+
+
+@dataclass(frozen=True)
+class RankedNiche:
+    niche: Niche
+    score: float
+    breakdown: Dict[str, float]
 
 
 NICHES: List[Niche] = [
@@ -75,46 +83,50 @@ WEIGHTS: Dict[str, float] = {
     "build_speed": 0.10,
 }
 
-
-def weighted_score(scores: Dict[str, int], risk_tolerance: int) -> float:
-    """Считает итоговый балл с учётом толерантности к конкуренции."""
-    adjusted_competition = max(1, 11 - scores["competition"])
-    comp_weight = WEIGHTS["competition"]
-    if risk_tolerance >= 7:
-        adjusted_competition = scores["competition"]
-    elif risk_tolerance <= 3:
-        comp_weight *= 1.6
-
-    value = (
-        scores["demand"] * WEIGHTS["demand"]
-        + adjusted_competition * comp_weight
-        + scores["monetization"] * WEIGHTS["monetization"]
-        + scores["virality"] * WEIGHTS["virality"]
-        + scores["build_speed"] * WEIGHTS["build_speed"]
-    )
-    return round(value, 2)
+METRIC_LABELS: Dict[str, str] = {
+    "demand": "Спрос",
+    "competition": "Конкуренция",
+    "monetization": "Монетизация",
+    "virality": "Виральность",
+    "build_speed": "Скорость сборки",
+}
 
 
-def evaluate_niches(time_per_day: int, budget: int, risk_tolerance: int) -> List[Tuple[Niche, float]]:
+def score_niche(niche: Niche, time_per_day: int, budget: int, risk_tolerance: int) -> RankedNiche:
+    """Считает оценку ниши и вклад каждого фактора."""
+    competition_input = niche.scores["competition"] if risk_tolerance >= 7 else max(1, 11 - niche.scores["competition"])
+    competition_weight = WEIGHTS["competition"] * (1.6 if risk_tolerance <= 3 else 1.0)
+
+    breakdown = {
+        "demand": niche.scores["demand"] * WEIGHTS["demand"],
+        "competition": competition_input * competition_weight,
+        "monetization": niche.scores["monetization"] * WEIGHTS["monetization"],
+        "virality": niche.scores["virality"] * WEIGHTS["virality"],
+        "build_speed": niche.scores["build_speed"] * WEIGHTS["build_speed"],
+    }
+
+    if budget < 100:
+        breakdown["budget_fit"] = -0.4
+    elif budget > 700:
+        breakdown["budget_fit"] = 0.2
+    else:
+        breakdown["budget_fit"] = 0.0
+
+    if time_per_day < 2:
+        breakdown["time_fit"] = -((10 - niche.scores["build_speed"]) * 0.08)
+    elif time_per_day >= 4:
+        breakdown["time_fit"] = 0.2
+    else:
+        breakdown["time_fit"] = 0.0
+
+    total = round(sum(breakdown.values()), 2)
+    return RankedNiche(niche=niche, score=total, breakdown=breakdown)
+
+
+def evaluate_niches(time_per_day: int, budget: int, risk_tolerance: int) -> List[RankedNiche]:
     """Возвращает ранжированный список ниш."""
-    results: List[Tuple[Niche, float]] = []
-
-    for niche in NICHES:
-        score = weighted_score(niche.scores, risk_tolerance)
-
-        if budget < 100:
-            score -= 0.4
-        elif budget > 700:
-            score += 0.2
-
-        if time_per_day < 2:
-            score -= (10 - niche.scores["build_speed"]) * 0.08
-        elif time_per_day >= 4:
-            score += 0.2
-
-        results.append((niche, round(score, 2)))
-
-    return sorted(results, key=lambda item: item[1], reverse=True)
+    ranked = [score_niche(niche, time_per_day, budget, risk_tolerance) for niche in NICHES]
+    return sorted(ranked, key=lambda item: item.score, reverse=True)
 
 
 def build_30_day_plan(best_niche: Niche) -> Dict[str, List[str]]:
@@ -143,13 +155,80 @@ def build_30_day_plan(best_niche: Niche) -> Dict[str, List[str]]:
     }
 
 
-def render_niche_card(rank: int, niche: Niche, score: float) -> None:
-    st.markdown(f"### {rank}. {niche.name} — {score}/10")
+def build_first_48h_sprint(best_niche: Niche) -> List[str]:
+    """Приоритетные задачи на первые 48 часов."""
+    return [
+        f"Описать ICP: {best_niche.audience}",
+        "Собрать MVP-лендинг + форму заявки за 1 день",
+        f"Подготовить 3 оффера под каналы: {', '.join(best_niche.channels[:3])}",
+        "Сделать 20 персональных outreach-сообщений потенциальным первым пользователям",
+        "Назначить 5 созвонов для customer discovery",
+    ]
+
+
+def build_launch_brief(
+    winner: RankedNiche,
+    roadmap: Dict[str, List[str]],
+    sprint_48h: List[str],
+    time_per_day: int,
+    budget: int,
+    risk_tolerance: int,
+) -> str:
+    """Формирует копируемый launch brief."""
+    ts = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
+    lines = [
+        "# Launch Brief",
+        f"Generated: {ts}",
+        "",
+        "## Input",
+        f"- Time per day: {time_per_day}h",
+        f"- Budget: ${budget}",
+        f"- Risk tolerance: {risk_tolerance}/10",
+        "",
+        "## Best Niche",
+        f"- Name: {winner.niche.name}",
+        f"- Score: {winner.score}/10",
+        f"- Audience: {winner.niche.audience}",
+        f"- Pain: {winner.niche.pain}",
+        f"- MVP: {winner.niche.mvp}",
+        f"- Monetization: {winner.niche.monetization}",
+        "",
+        "## First 48h Sprint",
+    ]
+
+    lines.extend([f"- {item}" for item in sprint_48h])
+    lines.append("")
+    lines.append("## 30-day Plan")
+
+    for stage, tasks in roadmap.items():
+        lines.append(f"### {stage}")
+        lines.extend([f"- {task}" for task in tasks])
+
+    return "\n".join(lines)
+
+
+def render_niche_card(rank: int, ranked: RankedNiche, best_score: float) -> None:
+    niche = ranked.niche
+    st.markdown(f"### {rank}. {niche.name} — {ranked.score}/10")
+    st.progress(min(1.0, ranked.score / max(best_score, 1)))
     st.write(f"**Аудитория:** {niche.audience}")
     st.write(f"**Проблема:** {niche.pain}")
     st.write(f"**MVP:** {niche.mvp}")
     st.write(f"**Монетизация:** {niche.monetization}")
     st.write(f"**Каналы роста:** {', '.join(niche.channels)}")
+
+
+def render_score_explainer(winner: RankedNiche) -> None:
+    st.subheader("Почему победила эта ниша")
+    metric_rows = []
+    for key in ["demand", "competition", "monetization", "virality", "build_speed"]:
+        metric_rows.append({"Фактор": METRIC_LABELS[key], "Вклад": round(winner.breakdown.get(key, 0.0), 2)})
+
+    st.table(metric_rows)
+    st.caption(
+        f"Поправка бюджета: {winner.breakdown.get('budget_fit', 0.0):+.2f} | "
+        f"Поправка по времени: {winner.breakdown.get('time_fit', 0.0):+.2f}"
+    )
 
 
 def main() -> None:
@@ -170,22 +249,29 @@ def main() -> None:
         risk_tolerance = st.slider("Толерантность к конкуренции (1-10)", min_value=1, max_value=10, value=5)
 
     ranked = evaluate_niches(time_per_day, budget, risk_tolerance)
-    winner, winner_score = ranked[0]
+    winner = ranked[0]
 
     st.subheader("Топ-3 ниши по текущим условиям")
-    for index, (niche, score) in enumerate(ranked, start=1):
-        render_niche_card(index, niche, score)
+    for index, ranked_niche in enumerate(ranked, start=1):
+        render_niche_card(index, ranked_niche, winner.score)
         st.divider()
 
     st.subheader("Победитель")
-    st.success(f"Лучший выбор: {winner.name} (оценка: {winner_score}/10)")
+    st.success(f"Лучший выбор: {winner.niche.name} (оценка: {winner.score}/10)")
 
+    render_score_explainer(winner)
+
+    roadmap = build_30_day_plan(winner.niche)
     st.subheader("30-дневный план действий")
-    roadmap = build_30_day_plan(winner)
     for stage, tasks in roadmap.items():
         st.markdown(f"#### {stage}")
         for task in tasks:
             st.markdown(f"- {task}")
+
+    sprint_48h = build_first_48h_sprint(winner.niche)
+    st.subheader("Первые 48 часов")
+    for task in sprint_48h:
+        st.markdown(f"- {task}")
 
     st.subheader("KPI на первый месяц")
     st.markdown(
@@ -195,6 +281,16 @@ def main() -> None:
         - 5+ платящих клиентов
         - 1-2 рабочих канала дистрибуции с прогнозируемым ростом
         """
+    )
+
+    launch_brief = build_launch_brief(winner, roadmap, sprint_48h, time_per_day, budget, risk_tolerance)
+    st.subheader("Launch Brief")
+    st.code(launch_brief, language="markdown")
+    st.download_button(
+        label="Скачать launch_brief.md",
+        data=launch_brief,
+        file_name="launch_brief.md",
+        mime="text/markdown",
     )
 
 
